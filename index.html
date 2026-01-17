@@ -364,7 +364,7 @@
 
             let message = '🛒 *New Order*\n\n';
             orderItems.forEach(item => {
-                message += `${item.quantity}pc(s) - ${item.name}\n`;
+                message += `${item.quantity} - ${item.name}\n`;
             });
 
             try {
@@ -407,10 +407,9 @@
                 const inStock = product.inStock || 0;
                 const lowStock = product.lowStock || 0;
                 
-                if (stockFilter === 'low') {
-                    matchesStock = inStock > 0 && inStock <= lowStock;
-                } else if (stockFilter === 'out') {
-                    matchesStock = inStock === 0;
+                if (stockFilter === 'low-out') {
+                    // Combined: show low stock, out of stock, AND negative stock
+                    matchesStock = inStock <= 0 || inStock <= lowStock;
                 } else if (stockFilter === 'in') {
                     matchesStock = inStock > lowStock;
                 }
@@ -424,7 +423,9 @@
             const inStock = product.inStock || 0;
             const lowStock = product.lowStock || 0;
             
-            if (inStock === 0) {
+            if (inStock < 0) {
+                return { label: `NEGATIVE STOCK (${inStock})`, color: 'bg-red-200 text-red-900 font-bold' };
+            } else if (inStock === 0) {
                 return { label: 'OUT OF STOCK', color: 'bg-red-100 text-red-700' };
             } else if (inStock <= lowStock) {
                 return { label: `LOW STOCK (${inStock})`, color: 'bg-yellow-100 text-yellow-700' };
@@ -652,11 +653,10 @@ ${orderItems.map(item => `${item.quantity}pc(s) - ${item.name}`).join('\n')}</pr
                             
                             <div>
                                 <label class="block text-sm font-medium mb-2">Stock Level</label>
-                                <div class="grid grid-cols-2 gap-2">
+                                <div class="grid grid-cols-3 gap-2">
                                     <button onclick="stockFilter = 'all'; render();" class="p-2 rounded text-sm ${stockFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-200'}">All Items</button>
                                     <button onclick="stockFilter = 'in'; render();" class="p-2 rounded text-sm ${stockFilter === 'in' ? 'bg-green-600 text-white' : 'bg-gray-200'}">In Stock</button>
-                                    <button onclick="stockFilter = 'low'; render();" class="p-2 rounded text-sm ${stockFilter === 'low' ? 'bg-yellow-600 text-white' : 'bg-gray-200'}">Low Stock</button>
-                                    <button onclick="stockFilter = 'out'; render();" class="p-2 rounded text-sm ${stockFilter === 'out' ? 'bg-red-600 text-white' : 'bg-gray-200'}">Out of Stock</button>
+                                    <button onclick="stockFilter = 'low-out'; render();" class="p-2 rounded text-sm ${stockFilter === 'low-out' ? 'bg-orange-600 text-white' : 'bg-gray-200'}">Low/Out</button>
                                 </div>
                             </div>
 
