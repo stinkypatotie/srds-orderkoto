@@ -364,7 +364,7 @@
 
             let message = '🛒 *New Order*\n\n';
             orderItems.forEach(item => {
-                message += `${item.quantity} - ${item.name}\n`;
+                message += `${item.quantity}pc(s)  - ${item.name}\n`;
             });
 
             try {
@@ -747,4 +747,5 @@ ${orderItems.map(item => `${item.quantity}pc(s) - ${item.name}`).join('\n')}</pr
         console.log('Initialization complete');
     </script>
 </body>
+
 </html>
