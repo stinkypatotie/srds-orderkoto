@@ -1361,28 +1361,47 @@ async function saveItem() {
   };
 
   if (editingId) {
-    const idx = items.findIndex(i => i.id === editingId);
     item.id = editingId;
-    items[idx] = item;
-    await saveToFirebase(item);
+    if (useFirebase) {
+      // Firebase listener will update items[] automatically
+      const { id, ...data } = item;
+      await db.ref(`inventory/${id}`).set(data)
+        .catch(e => { showToast("Save failed: " + e.message, "error"); return; });
+    } else {
+      const idx = items.findIndex(i => i.id === editingId);
+      if (idx > -1) items[idx] = item;
+      saveLocal(); updateUI();
+    }
     showToast("Item updated", "success");
   } else {
-    item.id = 'local-' + Date.now();
     item.createdAt = Date.now();
-    items.push(item);
-    await saveToFirebase(item);
+    if (useFirebase) {
+      const ref = db.ref("inventory").push();
+      await ref.set({ name: item.name, category: item.category, cost: item.cost,
+                      inStock: item.inStock, lowStock: item.lowStock, createdAt: item.createdAt, updatedAt: item.updatedAt })
+        .catch(e => { showToast("Save failed: " + e.message, "error"); return; });
+      // Firebase listener will update items[] automatically
+    } else {
+      item.id = 'local-' + Date.now();
+      items.push(item);
+      saveLocal(); updateUI();
+    }
     showToast("Item added", "success");
   }
   closeModal('item-modal');
-  updateUI();
 }
 
 async function deleteItem(id) {
   if (!confirm("Delete this item?")) return;
-  items = items.filter(i => i.id !== id);
-  await deleteFromFirebase(id);
-  saveLocal();
-  updateUI();
+  if (useFirebase) {
+    await db.ref(`inventory/${id}`).remove()
+      .catch(e => { showToast("Delete failed: " + e.message, "error"); return; });
+    // Firebase listener will remove it from items[] automatically
+  } else {
+    items = items.filter(i => i.id !== id);
+    saveLocal();
+    updateUI();
+  }
   showToast("Item deleted");
 }
 
@@ -1471,7 +1490,6 @@ async function importCSV() {
   const newItems = csvRows.map((row, i) => {
     const get = col => col !== null ? (row[col] || '').trim() : '';
     return {
-      id: 'local-' + Date.now() + '-' + i,
       name: get(nameCol),
       category: get(getCol('category')),
       cost: parseFloat(get(getCol('cost'))) || 0,
@@ -1483,26 +1501,39 @@ async function importCSV() {
 
   if (!newItems.length) return showToast("No valid rows found", "error");
 
+  // Show loading state
+  const btn = document.getElementById('import-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Importing…'; }
+
   if (useFirebase) {
-    // RTDB multi-path update — all items written in one atomic call
-    const updates = {};
+    try {
+      // Build one atomic multi-path update
+      const updates = {};
+      newItems.forEach(item => {
+        const key = db.ref("inventory").push().key;
+        updates[`inventory/${key}`] = item;
+      });
+      await db.ref().update(updates);
+      // Firebase real-time listener will update items[] and UI automatically
+      closeModal('csv-modal');
+      showToast(`Imported ${newItems.length} items`, "success");
+    } catch(e) {
+      console.error("CSV import error:", e);
+      showToast("Firebase import failed: " + (e.message || e), "error");
+    }
+  } else {
+    // Local storage fallback
     newItems.forEach(item => {
-      const key = db.ref("inventory").push().key;
-      item.id = key;
-      updates[`inventory/${key}`] = {
-        name: item.name, category: item.category,
-        cost: item.cost, inStock: item.inStock,
-        lowStock: item.lowStock, createdAt: item.createdAt
-      };
+      item.id = 'local-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+      items.push(item);
     });
-    await db.ref().update(updates).catch(() => showToast("Firebase import error","error"));
+    saveLocal();
+    closeModal('csv-modal');
+    updateUI();
+    showToast(`Imported ${newItems.length} items`, "success");
   }
 
-  items.push(...newItems);
-  saveLocal();
-  closeModal('csv-modal');
-  updateUI();
-  showToast(`Imported ${newItems.length} items`, "success");
+  if (btn) { btn.disabled = false; btn.textContent = 'Import'; }
 }
 
 // ═══════════════════════════════════════════════════════
