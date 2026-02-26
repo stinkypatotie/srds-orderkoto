@@ -1779,7 +1779,7 @@ function renderPicker() {
         <div class="item-name">${esc(item.name)}</div>
         <div style="font-size:11px;color:var(--text3);margin-top:1px">${esc(item.category||'—')}</div>
       </div>
-      <div class="cost" style="font-size:13px">${item.cost != null ? '$'+Number(item.cost).toFixed(2) : '—'}</div>
+      <div class="cost" style="font-size:13px">${item.cost != null ? '₱'+Number(item.cost).toFixed(2) : '—'}</div>
       <div><div class="stock-wrap ${sc}"><div class="stock-dot"></div><span class="stock-val" style="font-size:12px">${item.inStock ?? '—'}</span></div></div>
       <div class="qty-wrap" style="justify-content:flex-end">
         <button class="qty-btn" onclick="changeQty('${item.id}', -1)">−</button>
