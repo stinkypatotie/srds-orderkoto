@@ -804,7 +804,7 @@
       <div class="user-info">
         <div class="avatar" id="user-avatar">D</div>
         <div class="user-meta">
-          <div class="user-name" id="user-name">Dick</div>
+          <div class="user-name" id="user-name">Sir Ramos Drugstore</div>
           <div class="user-plan">Free plan</div>
         </div>
       </div>
@@ -1129,16 +1129,14 @@ function initFirebase() {
   }
 }
 
+let listenerPaused = false;
+
 function loadFromFirebase() {
-  // Real-time listener — updates the UI whenever data changes
   db.ref("inventory").on("value", snap => {
+    if (listenerPaused) return; // skip UI updates during bulk write
     const data = snap.val();
-    if (data) {
-      items = Object.entries(data).map(([id, val]) => ({ id, ...val }));
-    } else {
-      items = [];
-    }
-    saveLocal(); // keep local in sync as cache
+    items = data ? Object.entries(data).map(([id, val]) => ({ id, ...val })) : [];
+    saveLocal();
     updateUI();
   }, err => {
     console.warn("RTDB read error:", err);
@@ -1487,7 +1485,7 @@ async function importCSV() {
   const nameCol = getCol('name');
   if (nameCol === null) return showToast("Map the Name column", "error");
 
-  const newItems = csvRows.map((row, i) => {
+  const newItems = csvRows.map(row => {
     const get = col => col !== null ? (row[col] || '').trim() : '';
     return {
       name: get(nameCol),
@@ -1501,28 +1499,40 @@ async function importCSV() {
 
   if (!newItems.length) return showToast("No valid rows found", "error");
 
-  // Show loading state
   const btn = document.getElementById('import-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Importing…'; }
 
   if (useFirebase) {
     try {
-      // Build one atomic multi-path update
+      // 1. Pause the real-time listener so it doesn't re-render on every node write
+      listenerPaused = true;
+
+      // 2. Build one atomic multi-path update and send it in a single round-trip
       const updates = {};
       newItems.forEach(item => {
         const key = db.ref("inventory").push().key;
         updates[`inventory/${key}`] = item;
       });
       await db.ref().update(updates);
-      // Firebase real-time listener will update items[] and UI automatically
+
+      // 3. Do ONE read to sync the full dataset, update UI once
+      const snap = await db.ref("inventory").get();
+      const data = snap.val();
+      items = data ? Object.entries(data).map(([id, val]) => ({ id, ...val })) : [];
+      saveLocal();
+      updateUI();
+
+      // 4. Resume listener for future single-item changes
+      listenerPaused = false;
+
       closeModal('csv-modal');
       showToast(`Imported ${newItems.length} items`, "success");
     } catch(e) {
+      listenerPaused = false;
       console.error("CSV import error:", e);
-      showToast("Firebase import failed: " + (e.message || e), "error");
+      showToast("Import failed: " + (e.message || e), "error");
     }
   } else {
-    // Local storage fallback
     newItems.forEach(item => {
       item.id = 'local-' + Date.now() + '-' + Math.random().toString(36).slice(2);
       items.push(item);
