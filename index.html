@@ -1146,6 +1146,9 @@ function initFirebase() {
     firebase.auth().onAuthStateChanged(user => {
       if (user) {
         document.getElementById('login-overlay') && document.getElementById('login-overlay').remove();
+        // Show UID on screen so you can verify it matches Firebase Rules
+        showBanner('Signed in. UID: ' + user.uid, 'ok');
+        setTimeout(() => { const b = document.getElementById('fb-banner'); if(b) b.remove(); }, 8000);
         loadFromFirebase();
       } else {
         showLoginOverlay();
