@@ -1134,7 +1134,7 @@ function initFirebase() {
 
   try {
     if (!FIREBASE_CONFIG.apiKey || !FIREBASE_CONFIG.databaseURL) {
-      showBanner('⚠️ Firebase not configured — running on local storage only.', 'warn');
+      showBanner('Firebase not configured - running on local storage only.', 'warn');
       if (!cached) loadLocal();
       return;
     }
@@ -1142,19 +1142,18 @@ function initFirebase() {
     db = firebase.database();
     useFirebase = true;
 
-    // Firebase persists the session automatically — only shows login on first use
+    // ONE auth listener - controls everything
     firebase.auth().onAuthStateChanged(user => {
       if (user) {
-        // Already logged in — load data silently
+        document.getElementById('login-overlay') && document.getElementById('login-overlay').remove();
         loadFromFirebase();
       } else {
-        // First time or session expired — show login overlay
         showLoginOverlay();
       }
     });
 
   } catch (e) {
-    showBanner('🔴 Firebase init error: ' + e.message);
+    showBanner('Firebase init error: ' + e.message);
     if (!cached) loadLocal();
   }
 }
@@ -1231,22 +1230,11 @@ async function doLogin() {
 }
 
 let listenerPaused = false;
+let dataListenerOn = false;
 
 function loadFromFirebase() {
-  // Connection state indicator
-  db.ref('.info/connected').on('value', snap => {
-    if (snap.val() === true) {
-      const old = document.getElementById('fb-banner');
-      if (old) old.remove(); // clear any error banner on reconnect
-    } else {
-      // Only show disconnected warning after a short delay (avoids flash on first load)
-      setTimeout(() => {
-        db.ref('.info/connected').once('value', s => {
-          if (!s.val()) showBanner('🔴 Not connected to Firebase. Check your internet or database rules.', 'error');
-        });
-      }, 5000);
-    }
-  });
+  if (dataListenerOn) return; // prevent duplicate listeners
+  dataListenerOn = true;
 
   db.ref("inventory").on("value", snap => {
     if (listenerPaused) return;
@@ -1255,8 +1243,9 @@ function loadFromFirebase() {
     saveLocal();
     requestAnimationFrame(() => updateUI());
   }, err => {
-    showBanner('🔴 Database error: ' + err.message + ' — Check Firebase Rules.');
+    showBanner('Database error: ' + err.message + ' - Check Firebase Rules.');
     useFirebase = false;
+    dataListenerOn = false;
     loadLocal();
   });
 }
