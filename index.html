@@ -1142,19 +1142,9 @@ function initFirebase() {
     db = firebase.database();
     useFirebase = true;
 
-    // ONE auth listener - controls everything
-    firebase.auth().onAuthStateChanged(user => {
-      if (user) {
-        document.getElementById('login-overlay') && document.getElementById('login-overlay').remove();
-        // Force a fresh token then start the data listener
-        user.getIdToken(true).then(() => {
-          loadFromFirebase();
-        }).catch(e => {
-          showBanner('Token error: ' + e.message);
-        });
-      } else {
-        showLoginOverlay();
-      }
+    // Sign in first, then load data only after auth is fully confirmed
+    firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL).then(() => {
+      showLoginOverlay();
     });
 
   } catch (e) {
@@ -1219,13 +1209,15 @@ async function doLogin() {
   }
 
   btn.disabled = true;
-  btn.textContent = 'Signing in…';
+  btn.textContent = 'Signing in...';
   err.style.display = 'none';
 
   try {
-    await firebase.auth().signInWithEmailAndPassword(email, pass);
-    // onAuthStateChanged will fire and call loadFromFirebase automatically
-    document.getElementById('login-overlay')?.remove();
+    const cred = await firebase.auth().signInWithEmailAndPassword(email, pass);
+    // Force token refresh so RTDB gets the auth token immediately
+    await cred.user.getIdToken(true);
+    document.getElementById('login-overlay') && document.getElementById('login-overlay').remove();
+    loadFromFirebase();
   } catch(e) {
     err.textContent = e.message;
     err.style.display = 'block';
@@ -1239,6 +1231,14 @@ let dataListenerOn = false;
 
 function loadFromFirebase() {
   if (dataListenerOn) return; // prevent duplicate listeners
+
+  // Only proceed if a user is actually signed in
+  const user = firebase.auth().currentUser;
+  if (!user) {
+    showLoginOverlay();
+    return;
+  }
+
   dataListenerOn = true;
 
   db.ref("inventory").on("value", snap => {
@@ -1248,7 +1248,7 @@ function loadFromFirebase() {
     saveLocal();
     requestAnimationFrame(() => updateUI());
   }, err => {
-    showBanner('Database error: ' + err.message + ' - Check Firebase Rules.');
+    showBanner('Database error: ' + err.message);
     useFirebase = false;
     dataListenerOn = false;
     loadLocal();
