@@ -1500,39 +1500,55 @@ async function importCSV() {
   if (!newItems.length) return showToast("No valid rows found", "error");
 
   const btn = document.getElementById('import-btn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Importing…'; }
+  const total = newItems.length;
+
+  const setProgress = (n) => {
+    if (btn) btn.textContent = total > 50
+      ? `Importing… ${n}/${total}`
+      : 'Importing…';
+  };
+
+  if (btn) { btn.disabled = true; setProgress(0); }
 
   if (useFirebase) {
     try {
-      // 1. Pause the real-time listener so it doesn't re-render on every node write
       listenerPaused = true;
 
-      // 2. Build one atomic multi-path update and send it in a single round-trip
-      const updates = {};
-      newItems.forEach(item => {
-        const key = db.ref("inventory").push().key;
-        updates[`inventory/${key}`] = item;
-      });
-      await db.ref().update(updates);
+      // Split into chunks of 100 to stay well under RTDB's payload limit
+      const CHUNK = 100;
+      let done = 0;
 
-      // 3. Do ONE read to sync the full dataset, update UI once
+      for (let i = 0; i < newItems.length; i += CHUNK) {
+        const chunk = newItems.slice(i, i + CHUNK);
+        const updates = {};
+        chunk.forEach(item => {
+          const key = db.ref("inventory").push().key;
+          updates[`inventory/${key}`] = item;
+        });
+        await db.ref().update(updates);
+        done += chunk.length;
+        setProgress(done);
+      }
+
+      // One final read — sync everything and render once
       const snap = await db.ref("inventory").get();
       const data = snap.val();
       items = data ? Object.entries(data).map(([id, val]) => ({ id, ...val })) : [];
       saveLocal();
       updateUI();
-
-      // 4. Resume listener for future single-item changes
       listenerPaused = false;
 
       closeModal('csv-modal');
-      showToast(`Imported ${newItems.length} items`, "success");
+      showToast(`Imported ${total} items ✓`, "success");
+
     } catch(e) {
       listenerPaused = false;
       console.error("CSV import error:", e);
       showToast("Import failed: " + (e.message || e), "error");
     }
+
   } else {
+    // Local fallback — instant
     newItems.forEach(item => {
       item.id = 'local-' + Date.now() + '-' + Math.random().toString(36).slice(2);
       items.push(item);
@@ -1540,7 +1556,7 @@ async function importCSV() {
     saveLocal();
     closeModal('csv-modal');
     updateUI();
-    showToast(`Imported ${newItems.length} items`, "success");
+    showToast(`Imported ${total} items ✓`, "success");
   }
 
   if (btn) { btn.disabled = false; btn.textContent = 'Import'; }
