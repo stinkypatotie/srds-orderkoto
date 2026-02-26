@@ -802,7 +802,7 @@
 
     <div class="sidebar-footer">
       <div class="user-info">
-        <div class="avatar" id="user-avatar">D</div>
+        <div class="avatar" id="user-avatar">S</div>
         <div class="user-meta">
           <div class="user-name" id="user-name">Sir Ramos Drugstore</div>
           <div class="user-plan">Free plan</div>
@@ -1085,11 +1085,12 @@
 // ═══════════════════════════════════════════════════════
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyBPkFBsulcCW1pDhVLrp1ht0vgEIkuMW4U",
-    authDomain: "orderkoto-65fb6.firebaseapp.com",
-    projectId: "orderkoto-65fb6",
-    storageBucket: "orderkoto-65fb6.firebasestorage.app",
-    messagingSenderId: "684809442563",
-    appId: "1:684809442563:web:84ecfeda5a4b9cef68c536"
+  authDomain: "orderkoto-65fb6.firebaseapp.com",
+  databaseURL: "https://orderkoto-65fb6-default-rtdb.firebaseio.com",
+  projectId: "orderkoto-65fb6",
+  storageBucket: "orderkoto-65fb6.firebasestorage.app",
+  messagingSenderId: "684809442563",
+  appId: "1:684809442563:web:84ecfeda5a4b9cef68c536"
 };
 
 // ═══════════════════════════════════════════════════════
@@ -1121,7 +1122,7 @@ function initFirebase() {
   }
 
   try {
-    if (FIREBASE_CONFIG.apiKey === "YOUR_API_KEY") {
+    if (!FIREBASE_CONFIG.apiKey || !FIREBASE_CONFIG.databaseURL) {
       console.log("Firebase not configured — using local storage.");
       if (!cached) loadLocal();
       return;
@@ -1655,14 +1656,18 @@ function renderPicker() {
   const cat = document.getElementById('order-cat')?.value || '';
 
   let filtered = items.filter(i => {
+    // Only show items that need attention (low or out of stock)
+    const needsAttention = getStockClass(i) === 'low-stock' || getStockClass(i) === 'out-stock';
     const matchQ = !q || i.name?.toLowerCase().includes(q) || i.category?.toLowerCase().includes(q);
     const matchC = !cat || i.category === cat;
-    return matchQ && matchC;
+    return needsAttention && matchQ && matchC;
   }).sort((a,b) => (a.name||'').localeCompare(b.name||''));
 
   const body = document.getElementById('picker-body');
   if (!filtered.length) {
-    body.innerHTML = `<div class="empty-state" style="padding:32px"><div class="empty-desc">No items match your search.</div></div>`;
+    body.innerHTML = `<div class="empty-state" style="padding:32px">
+      <div class="empty-desc">${items.length ? 'All items are fully stocked! 🎉' : 'No items in database yet.'}</div>
+    </div>`;
     return;
   }
 
@@ -1748,7 +1753,8 @@ function clearOrder() {
 
 // ── Update category dropdown when order page opens ──
 function refreshOrderCats() {
-  const cats = [...new Set(items.map(i => i.category).filter(Boolean))].sort();
+  const attentionItems = items.filter(i => getStockClass(i) === 'low-stock' || getStockClass(i) === 'out-stock');
+  const cats = [...new Set(attentionItems.map(i => i.category).filter(Boolean))].sort();
   const sel = document.getElementById('order-cat');
   if (!sel) return;
   const cur = sel.value;
