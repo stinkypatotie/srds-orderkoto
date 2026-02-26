@@ -564,6 +564,183 @@
     border-radius: 4px;
   }
   @keyframes shimmer { to { background-position: -200% 0; } }
+
+  /* ── ORDER PAGE ── */
+  .order-layout {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 20px;
+    align-items: start;
+  }
+  .order-search-bar {
+    display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap;
+  }
+  .order-search-bar .search-wrap { max-width: 260px; flex: 1; }
+  .cat-select {
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-family: inherit; font-size: 13px;
+    background: var(--surface); color: var(--text);
+    outline: none; appearance: none; cursor: pointer;
+    min-width: 140px;
+  }
+  .cat-select:focus { border-color: var(--accent); }
+
+  .item-picker {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .picker-row {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 110px;
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--border);
+    align-items: center;
+    transition: background 0.1s;
+  }
+  .picker-row:last-child { border-bottom: none; }
+  .picker-row:hover { background: var(--bg); }
+  .picker-header { background: var(--surface2); }
+  .picker-header .th { cursor: default; }
+  .picker-body { max-height: 440px; overflow-y: auto; }
+
+  .qty-wrap {
+    display: flex; align-items: center; gap: 6px;
+  }
+  .qty-btn {
+    width: 26px; height: 26px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    cursor: pointer; font-size: 14px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text2); transition: all 0.1s; flex-shrink: 0;
+    line-height: 1;
+  }
+  .qty-btn:hover { background: var(--accent); color: white; border-color: var(--accent); }
+  .qty-input {
+    width: 44px;
+    padding: 4px 6px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    text-align: center;
+    font-family: inherit; font-size: 13px; font-weight: 600;
+    background: var(--surface); color: var(--text);
+    outline: none;
+  }
+  .qty-input:focus { border-color: var(--accent); }
+
+  /* ORDER SUMMARY PANEL */
+  .order-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    position: sticky;
+    top: 80px;
+  }
+  .order-panel-header {
+    padding: 16px 18px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .order-panel-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 18px;
+  }
+  .order-count {
+    background: var(--accent);
+    color: white;
+    font-size: 11px; font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 20px;
+  }
+  .order-items { padding: 12px 18px; max-height: 320px; overflow-y: auto; }
+  .order-item-row {
+    display: flex; align-items: flex-start;
+    gap: 10px; padding: 9px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .order-item-row:last-child { border-bottom: none; }
+  .order-item-name { flex: 1; font-weight: 500; line-height: 1.3; }
+  .order-item-meta { font-size: 11px; color: var(--text3); margin-top: 1px; }
+  .order-item-total { font-weight: 700; white-space: nowrap; }
+  .remove-line {
+    background: none; border: none; cursor: pointer;
+    color: var(--text3); font-size: 14px; padding: 0 2px;
+    line-height: 1; transition: color 0.1s;
+  }
+  .remove-line:hover { color: var(--red); }
+
+  .order-empty {
+    padding: 32px 18px;
+    text-align: center;
+    color: var(--text3);
+    font-size: 13px;
+  }
+  .order-empty svg { margin: 0 auto 10px; display: block; color: var(--border); }
+
+  .order-footer { padding: 14px 18px; border-top: 1px solid var(--border); }
+  .order-total-row {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 14px;
+  }
+  .order-total-label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text3); }
+  .order-total-val { font-family: 'DM Serif Display', serif; font-size: 26px; letter-spacing: -0.5px; }
+
+  .tg-config {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    margin-bottom: 12px;
+    font-size: 12px;
+  }
+  .tg-config-title {
+    font-weight: 600; font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--text3); margin-bottom: 8px;
+  }
+  .tg-config input {
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-family: inherit; font-size: 12px;
+    background: var(--surface); color: var(--text);
+    outline: none; margin-bottom: 6px;
+  }
+  .tg-config input:last-child { margin-bottom: 0; }
+  .tg-config input:focus { border-color: var(--accent); }
+
+  .btn-telegram {
+    width: 100%;
+    background: #229ED9;
+    color: white;
+    justify-content: center;
+    font-size: 14px;
+    padding: 10px;
+  }
+  .btn-telegram:hover { background: #1a8bbf; }
+  .btn-telegram:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-clear { width: 100%; justify-content: center; margin-top: 8px; }
+
+  /* PAGE VISIBILITY */
+  .page { display: none; }
+  .page.active { display: block; }
+
+  @media (max-width: 900px) {
+    .order-layout { grid-template-columns: 1fr; }
+    .order-panel { position: static; }
+  }
+  @media (max-width: 768px) {
+    .picker-row { grid-template-columns: 2fr 1fr 100px; }
+    .picker-row > *:nth-child(3) { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -592,24 +769,23 @@
         </svg>
         Inventory
       </div>
-      <div class="nav-item" onclick="setView('low')">
+      <div class="nav-item" onclick="setView('attention')">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M8 2v8M8 13v1M4 6l4-4 4 4"/>
+          <path d="M8 2L1 13h14L8 2z"/><path d="M8 7v3M8 12v.5"/>
         </svg>
-        Low Stock
-        <span id="low-badge" style="margin-left:auto;background:var(--yellow-light);color:var(--yellow);font-size:11px;font-weight:600;padding:1px 6px;border-radius:20px;"></span>
-      </div>
-      <div class="nav-item" onclick="setView('out')">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-          <circle cx="8" cy="8" r="6"/><path d="M8 5v3M8 11v.5"/>
-        </svg>
-        Out of Stock
-        <span id="out-badge" style="margin-left:auto;background:var(--red-light);color:var(--red);font-size:11px;font-weight:600;padding:1px 6px;border-radius:20px;"></span>
+        Needs Attention
+        <span id="attention-badge" style="margin-left:auto;background:var(--red-light);color:var(--red);font-size:11px;font-weight:600;padding:1px 6px;border-radius:20px;"></span>
       </div>
     </div>
 
     <div class="nav-section">
       <div class="nav-label">Actions</div>
+      <div class="nav-item" onclick="setView('order')">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M2 3h12M2 3l1 10h10l1-10M6 7v4M10 7v4"/><circle cx="6" cy="2" r="1" fill="currentColor" stroke="none"/><circle cx="10" cy="2" r="1" fill="currentColor" stroke="none"/>
+        </svg>
+        New Order
+      </div>
       <div class="nav-item" onclick="openAddModal()">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
           <circle cx="8" cy="8" r="6"/><path d="M8 5v6M5 8h6"/>
@@ -628,7 +804,7 @@
       <div class="user-info">
         <div class="avatar" id="user-avatar">D</div>
         <div class="user-meta">
-          <div class="user-name" id="user-name">Sir Ramos Drugstore</div>
+          <div class="user-name" id="user-name">Dick</div>
           <div class="user-plan">Free plan</div>
         </div>
       </div>
@@ -660,6 +836,7 @@
     </div>
 
     <div class="content">
+      <div id="page-inventory" class="page active">
       <!-- STATS -->
       <div class="stats-grid">
         <div class="stat-card">
@@ -672,15 +849,10 @@
           <div class="stat-value" id="stat-in">0</div>
           <div class="stat-sub">items available</div>
         </div>
-        <div class="stat-card warn">
-          <div class="stat-label">Low Stock</div>
-          <div class="stat-value" id="stat-low">0</div>
-          <div class="stat-sub">needs attention</div>
-        </div>
         <div class="stat-card danger">
-          <div class="stat-label">Out of Stock</div>
-          <div class="stat-value" id="stat-out">0</div>
-          <div class="stat-sub">unavailable</div>
+          <div class="stat-label">Needs Attention</div>
+          <div class="stat-value" id="stat-attention">0</div>
+          <div class="stat-sub">low or out of stock</div>
         </div>
       </div>
 
@@ -689,8 +861,7 @@
         <div class="filter-tabs" id="filter-tabs">
           <div class="filter-tab active" onclick="setFilter('all', this)">All</div>
           <div class="filter-tab" onclick="setFilter('in-stock', this)">In Stock</div>
-          <div class="filter-tab" onclick="setFilter('low', this)">Low Stock</div>
-          <div class="filter-tab" onclick="setFilter('out', this)">Out of Stock</div>
+          <div class="filter-tab" onclick="setFilter('attention', this)">Needs Attention</div>
         </div>
         <div class="toolbar-right">
           <button class="btn btn-ghost btn-sm" onclick="openCSVModal()">
@@ -731,6 +902,78 @@
           </div>
         </div>
       </div>
+      </div> <!-- /page-inventory -->
+
+      <!-- ORDER PAGE -->
+      <div id="page-order" class="page">
+        <div class="order-layout">
+
+          <!-- LEFT: Item Picker -->
+          <div>
+            <div class="order-search-bar">
+              <div class="search-wrap">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L13 13"/>
+                </svg>
+                <input class="search-input" id="order-search" placeholder="Search items…" oninput="renderPicker()">
+              </div>
+              <select class="cat-select" id="order-cat" onchange="renderPicker()">
+                <option value="">All Categories</option>
+              </select>
+            </div>
+
+            <div class="item-picker">
+              <div class="picker-row picker-header">
+                <div class="th">Item</div>
+                <div class="th">Cost</div>
+                <div class="th">Stock</div>
+                <div class="th" style="justify-content:flex-end">Qty</div>
+              </div>
+              <div class="picker-body" id="picker-body"></div>
+            </div>
+          </div>
+
+          <!-- RIGHT: Order Summary -->
+          <div class="order-panel">
+            <div class="order-panel-header">
+              <div class="order-panel-title">Order Summary</div>
+              <span class="order-count" id="order-count">0</span>
+            </div>
+
+            <div class="order-empty" id="order-empty">
+              <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M4 6h24M4 6l2 20h20l2-20M12 14v8M20 14v8"/>
+              </svg>
+              No items added yet.<br>Set a quantity to add.
+            </div>
+            <div class="order-items" id="order-lines" style="display:none"></div>
+
+            <div class="order-footer">
+              <div class="order-total-row">
+                <div class="order-total-label">Order Total</div>
+                <div class="order-total-val" id="order-total">$0.00</div>
+              </div>
+
+              <div class="tg-config">
+                <div class="tg-config-title">📨 Telegram</div>
+                <input id="tg-token" placeholder="Bot Token  (123456:ABC…)" autocomplete="off">
+                <input id="tg-chat" placeholder="Chat ID  (-100123456789)" autocomplete="off">
+              </div>
+
+              <button class="btn btn-telegram" onclick="sendTelegram()">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0">
+                  <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248-2.04 9.613c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.37 14.53l-2.95-.924c-.642-.204-.655-.642.134-.953l11.52-4.443c.535-.194 1.003.13.488 1.038z"/>
+                </svg>
+                Send via Telegram
+              </button>
+              <button class="btn btn-ghost btn-clear" onclick="clearOrder()">Clear Order</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+      <!-- /ORDER PAGE -->
+
     </div>
   </div>
 </div>
@@ -840,14 +1083,14 @@
 // Get this from: Firebase Console → Project Settings → Your apps
 // IMPORTANT: Also add databaseURL below (see comment)
 // ═══════════════════════════════════════════════════════
-const firebaseConfig = {
-    apiKey: "AIzaSyBPkFBsulcCW1pDhVLrp1ht0vgEIkuMW4U",
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBPkFBsulcCW1pDhVLrp1ht0vgEIkuMW4U",
     authDomain: "orderkoto-65fb6.firebaseapp.com",
     projectId: "orderkoto-65fb6",
     storageBucket: "orderkoto-65fb6.firebasestorage.app",
     messagingSenderId: "684809442563",
     appId: "1:684809442563:web:84ecfeda5a4b9cef68c536"
-	};
+};
 
 // ═══════════════════════════════════════════════════════
 // APP STATE
@@ -949,17 +1192,33 @@ function loadLocal() {
 // ═══════════════════════════════════════════════════════
 function setView(v) {
   currentView = v;
-  currentFilter = v === 'low' ? 'low' : v === 'out' ? 'out' : 'all';
-  const titles = { inventory: 'Inventory', low: 'Low Stock', out: 'Out of Stock' };
-  document.getElementById('view-title').textContent = titles[v];
+
+  // Switch pages
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  const pageId = v === 'order' ? 'page-order' : 'page-inventory';
+  document.getElementById(pageId)?.classList.add('active');
+
+  // Topbar title
+  const titles = { inventory: 'Inventory', attention: 'Needs Attention', order: 'New Order' };
+  document.getElementById('view-title').textContent = titles[v] || 'Inventory';
+
+  // Nav highlight
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   event.currentTarget.classList.add('active');
-  // sync filter tabs
-  document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
-  const fmap = { all: 0, 'in-stock': 1, low: 2, out: 3 };
-  document.querySelectorAll('.filter-tab')[fmap[currentFilter] || 0].classList.add('active');
+
+  if (v === 'order') {
+    refreshOrderCats();
+    renderPicker();
+    renderOrderSummary();
+  } else {
+    currentFilter = v === 'attention' ? 'attention' : 'all';
+    document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+    const fmap = { all: 0, 'in-stock': 1, attention: 2 };
+    document.querySelectorAll('.filter-tab')[fmap[currentFilter] || 0].classList.add('active');
+    renderTable();
+  }
+
   closeSidebar();
-  renderTable();
 }
 
 function setFilter(f, el) {
@@ -982,17 +1241,13 @@ function updateUI() {
 
 function updateStats() {
   const total = items.length;
-  const low = items.filter(i => i.inStock > 0 && i.inStock <= (i.lowStock || 0)).length;
-  const out = items.filter(i => i.inStock <= 0).length;
-  const inS = total - low - out;
+  const attention = items.filter(i => i.inStock <= 0 || (i.lowStock > 0 && i.inStock <= i.lowStock)).length;
+  const inS = total - attention;
   document.getElementById('stat-total').textContent = total;
   document.getElementById('stat-in').textContent = inS < 0 ? 0 : inS;
-  document.getElementById('stat-low').textContent = low;
-  document.getElementById('stat-out').textContent = out;
-  const lb = document.getElementById('low-badge');
-  const ob = document.getElementById('out-badge');
-  lb.textContent = low > 0 ? low : '';
-  ob.textContent = out > 0 ? out : '';
+  document.getElementById('stat-attention').textContent = attention;
+  const ab = document.getElementById('attention-badge');
+  ab.textContent = attention > 0 ? attention : '';
 }
 
 function updateCategorySelect() {
@@ -1021,8 +1276,7 @@ function renderTable() {
     const match = !q || i.name?.toLowerCase().includes(q) || i.category?.toLowerCase().includes(q);
     if (!match) return false;
     if (currentFilter === 'in-stock') return getStockClass(i) === 'in-stock';
-    if (currentFilter === 'low') return getStockClass(i) === 'low-stock';
-    if (currentFilter === 'out') return getStockClass(i) === 'out-stock';
+    if (currentFilter === 'attention') return getStockClass(i) === 'low-stock' || getStockClass(i) === 'out-stock';
     return true;
   });
 
@@ -1307,10 +1561,194 @@ dz.addEventListener('drop', e => {
 });
 
 // ═══════════════════════════════════════════════════════
+// ORDER STATE
+// ═══════════════════════════════════════════════════════
+let orderCart = {}; // { itemId: qty }
+
+function getOrderItems() {
+  return Object.entries(orderCart)
+    .filter(([,qty]) => qty > 0)
+    .map(([id, qty]) => {
+      const item = items.find(i => i.id === id);
+      return item ? { ...item, qty, lineTotal: qty * (item.cost || 0) } : null;
+    }).filter(Boolean);
+}
+
+function getOrderTotal() {
+  return getOrderItems().reduce((s, i) => s + i.lineTotal, 0);
+}
+
+// ── Render the item picker list ──
+function renderPicker() {
+  const q = (document.getElementById('order-search')?.value || '').toLowerCase();
+  const cat = document.getElementById('order-cat')?.value || '';
+
+  let filtered = items.filter(i => {
+    const matchQ = !q || i.name?.toLowerCase().includes(q) || i.category?.toLowerCase().includes(q);
+    const matchC = !cat || i.category === cat;
+    return matchQ && matchC;
+  }).sort((a,b) => (a.name||'').localeCompare(b.name||''));
+
+  const body = document.getElementById('picker-body');
+  if (!filtered.length) {
+    body.innerHTML = `<div class="empty-state" style="padding:32px"><div class="empty-desc">No items match your search.</div></div>`;
+    return;
+  }
+
+  body.innerHTML = filtered.map(item => {
+    const qty = orderCart[item.id] || 0;
+    const sc = getStockClass(item);
+    return `<div class="picker-row">
+      <div>
+        <div class="item-name">${esc(item.name)}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:1px">${esc(item.category||'—')}</div>
+      </div>
+      <div class="cost" style="font-size:13px">${item.cost != null ? '$'+Number(item.cost).toFixed(2) : '—'}</div>
+      <div><div class="stock-wrap ${sc}"><div class="stock-dot"></div><span class="stock-val" style="font-size:12px">${item.inStock ?? '—'}</span></div></div>
+      <div class="qty-wrap" style="justify-content:flex-end">
+        <button class="qty-btn" onclick="changeQty('${item.id}', -1)">−</button>
+        <input class="qty-input" type="number" min="0" value="${qty}" id="qty-${item.id}"
+          onchange="setQty('${item.id}', this.value)"
+          oninput="setQty('${item.id}', this.value)">
+        <button class="qty-btn" onclick="changeQty('${item.id}', 1)">+</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function changeQty(id, delta) {
+  const cur = orderCart[id] || 0;
+  const next = Math.max(0, cur + delta);
+  orderCart[id] = next;
+  // Update input without full re-render
+  const inp = document.getElementById(`qty-${id}`);
+  if (inp) inp.value = next;
+  renderOrderSummary();
+}
+
+function setQty(id, val) {
+  const n = Math.max(0, parseInt(val) || 0);
+  orderCart[id] = n;
+  renderOrderSummary();
+}
+
+// ── Render the right-hand summary panel ──
+function renderOrderSummary() {
+  const lines = getOrderItems();
+  const total = getOrderTotal();
+  const count = lines.reduce((s,i) => s + i.qty, 0);
+
+  document.getElementById('order-count').textContent = count;
+  document.getElementById('order-total').textContent = '$' + total.toFixed(2);
+
+  const emptyEl = document.getElementById('order-empty');
+  const linesEl = document.getElementById('order-lines');
+
+  if (!lines.length) {
+    emptyEl.style.display = '';
+    linesEl.style.display = 'none';
+    return;
+  }
+  emptyEl.style.display = 'none';
+  linesEl.style.display = 'block';
+  linesEl.innerHTML = lines.map(i => `
+    <div class="order-item-row">
+      <div style="flex:1">
+        <div class="order-item-name">${esc(i.name)}</div>
+        <div class="order-item-meta">${i.qty} × $${Number(i.cost||0).toFixed(2)}</div>
+      </div>
+      <div class="order-item-total">$${i.lineTotal.toFixed(2)}</div>
+      <button class="remove-line" onclick="removeOrderLine('${i.id}')" title="Remove">✕</button>
+    </div>`).join('');
+}
+
+function removeOrderLine(id) {
+  delete orderCart[id];
+  const inp = document.getElementById(`qty-${id}`);
+  if (inp) inp.value = 0;
+  renderOrderSummary();
+}
+
+function clearOrder() {
+  orderCart = {};
+  renderPicker();
+  renderOrderSummary();
+}
+
+// ── Update category dropdown when order page opens ──
+function refreshOrderCats() {
+  const cats = [...new Set(items.map(i => i.category).filter(Boolean))].sort();
+  const sel = document.getElementById('order-cat');
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">All Categories</option>' + cats.map(c => `<option ${c===cur?'selected':''}>${esc(c)}</option>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════
+// TELEGRAM
+// ═══════════════════════════════════════════════════════
+async function sendTelegram() {
+  const token = document.getElementById('tg-token').value.trim();
+  const chatId = document.getElementById('tg-chat').value.trim();
+
+  if (!token || !chatId) return showToast("Enter your Bot Token and Chat ID", "error");
+
+  const lines = getOrderItems();
+  if (!lines.length) return showToast("Order is empty", "error");
+
+  const now = new Date().toLocaleString('en-US', { dateStyle:'medium', timeStyle:'short' });
+  const lineItems = lines.map((i,idx) =>
+    `${idx+1}. *${i.name}*\n   ${i.qty} pcs × $${Number(i.cost||0).toFixed(2)} = *$${i.lineTotal.toFixed(2)}*`
+  ).join('\n');
+
+  const msg =
+`🛒 *New Order*
+📅 ${now}
+─────────────────
+${lineItems}
+─────────────────
+*Total: $${getOrderTotal().toFixed(2)}*`;
+
+  const btn = document.querySelector('.btn-telegram');
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: 'Markdown' })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showToast("Order sent via Telegram! ✓", "success");
+      // Save token/chat for convenience
+      localStorage.setItem('tg_token', token);
+      localStorage.setItem('tg_chat', chatId);
+    } else {
+      showToast("Telegram error: " + (data.description || 'Unknown'), "error");
+    }
+  } catch(e) {
+    showToast("Network error sending to Telegram", "error");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248-2.04 9.613c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.37 14.53l-2.95-.924c-.642-.204-.655-.642.134-.953l11.52-4.443c.535-.194 1.003.13.488 1.038z"/></svg> Send via Telegram`;
+  }
+}
+
+// ── Restore saved Telegram credentials ──
+function restoreTgCreds() {
+  const t = localStorage.getItem('tg_token');
+  const c = localStorage.getItem('tg_chat');
+  if (t) document.getElementById('tg-token').value = t;
+  if (c) document.getElementById('tg-chat').value = c;
+}
+
+// ═══════════════════════════════════════════════════════
 // BOOT
 // ═══════════════════════════════════════════════════════
 initFirebase();
+restoreTgCreds();
 </script>
 </body>
 </html>
-
