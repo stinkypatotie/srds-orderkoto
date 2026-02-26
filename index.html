@@ -1126,7 +1126,6 @@ function showBanner(msg, type = 'error') {
 }
 
 function initFirebase() {
-  // Show cached local data immediately — table won't be blank while Firebase connects
   const cached = localStorage.getItem('stockr_items');
   if (cached) {
     try { items = JSON.parse(cached); } catch(e) { items = []; }
@@ -1142,10 +1141,92 @@ function initFirebase() {
     firebase.initializeApp(FIREBASE_CONFIG);
     db = firebase.database();
     useFirebase = true;
-    loadFromFirebase();
+
+    // Firebase persists the session automatically — only shows login on first use
+    firebase.auth().onAuthStateChanged(user => {
+      if (user) {
+        // Already logged in — load data silently
+        loadFromFirebase();
+      } else {
+        // First time or session expired — show login overlay
+        showLoginOverlay();
+      }
+    });
+
   } catch (e) {
     showBanner('🔴 Firebase init error: ' + e.message);
     if (!cached) loadLocal();
+  }
+}
+
+function showLoginOverlay() {
+  // Remove existing if any
+  const old = document.getElementById('login-overlay');
+  if (old) old.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'login-overlay';
+  overlay.style.cssText = `position:fixed;inset:0;background:#F5F2EC;z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px;`;
+  overlay.innerHTML = `
+    <div style="background:white;border-radius:16px;padding:32px 28px;width:100%;max-width:360px;box-shadow:0 8px 32px rgba(0,0,0,0.10);font-family:'DM Sans',sans-serif;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:24px;">
+        <div style="width:36px;height:36px;background:#C4622D;border-radius:8px;display:flex;align-items:center;justify-content:center;">
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="5" height="5" rx="1" fill="white"/><rect x="9" y="2" width="5" height="5" rx="1" fill="white" opacity="0.7"/><rect x="2" y="9" width="5" height="5" rx="1" fill="white" opacity="0.7"/><rect x="9" y="9" width="5" height="5" rx="1" fill="white" opacity="0.4"/></svg>
+        </div>
+        <span style="font-family:'DM Serif Display',serif;font-size:22px;letter-spacing:-0.3px;">Stockr</span>
+      </div>
+      <div style="font-size:13px;color:#6B6560;margin-bottom:20px;">Sir Ramos Drugstore — sign in to continue</div>
+
+      <div style="margin-bottom:12px;">
+        <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.3px;color:#6B6560;margin-bottom:5px;">Email</label>
+        <input id="login-email" type="email" placeholder="your@email.com"
+          style="width:100%;padding:10px 12px;border:1px solid #E8E3DA;border-radius:8px;font-family:inherit;font-size:14px;outline:none;box-sizing:border-box;">
+      </div>
+      <div style="margin-bottom:20px;">
+        <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.3px;color:#6B6560;margin-bottom:5px;">Password</label>
+        <input id="login-password" type="password" placeholder="••••••••"
+          style="width:100%;padding:10px 12px;border:1px solid #E8E3DA;border-radius:8px;font-family:inherit;font-size:14px;outline:none;box-sizing:border-box;">
+      </div>
+      <div id="login-error" style="color:#B83232;font-size:12px;margin-bottom:12px;display:none;"></div>
+      <button id="login-btn" onclick="doLogin()"
+        style="width:100%;padding:11px;background:#C4622D;color:white;border:none;border-radius:8px;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;">
+        Sign In
+      </button>
+    </div>`;
+
+  document.body.appendChild(overlay);
+
+  // Allow Enter key to submit
+  overlay.querySelectorAll('input').forEach(inp => {
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+  });
+}
+
+async function doLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const pass  = document.getElementById('login-password').value;
+  const btn   = document.getElementById('login-btn');
+  const err   = document.getElementById('login-error');
+
+  if (!email || !pass) {
+    err.textContent = 'Please enter your email and password.';
+    err.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Signing in…';
+  err.style.display = 'none';
+
+  try {
+    await firebase.auth().signInWithEmailAndPassword(email, pass);
+    // onAuthStateChanged will fire and call loadFromFirebase automatically
+    document.getElementById('login-overlay')?.remove();
+  } catch(e) {
+    err.textContent = e.message;
+    err.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Sign In';
   }
 }
 
