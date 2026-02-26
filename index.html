@@ -661,15 +661,68 @@
   }
   .order-items { padding: 12px 18px; max-height: 320px; overflow-y: auto; }
   .order-item-row {
-    display: flex; align-items: flex-start;
-    gap: 10px; padding: 9px 0;
+    padding: 0;
     border-bottom: 1px solid var(--border);
     font-size: 13px;
+    cursor: pointer;
+    transition: background 0.1s;
   }
   .order-item-row:last-child { border-bottom: none; }
-  .order-item-name { flex: 1; font-weight: 500; line-height: 1.3; }
-  .order-item-meta { font-size: 11px; color: var(--text3); margin-top: 1px; }
-  .order-item-total { font-weight: 700; white-space: nowrap; }
+  .order-item-row:hover { background: var(--bg); }
+
+  .order-item-summary {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 9px 10px 9px 0;
+  }
+  .order-item-pill {
+    background: var(--accent);
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 20px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .order-item-name {
+    flex: 1;
+    font-weight: 500;
+    line-height: 1.3;
+    font-size: 12.5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .order-item-chevron {
+    color: var(--text3);
+    font-size: 11px;
+    flex-shrink: 0;
+    transition: transform 0.2s;
+  }
+  .order-item-row.collapsed .order-item-chevron {
+    transform: rotate(-90deg);
+  }
+  .order-item-detail {
+    display: block;
+    overflow: hidden;
+    max-height: 60px;
+    transition: max-height 0.25s ease, opacity 0.2s;
+    opacity: 1;
+  }
+  .order-item-row.collapsed .order-item-detail {
+    max-height: 0;
+    opacity: 0;
+  }
+  .order-item-detail-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 0 9px 0;
+  }
+  .order-item-meta { font-size: 11px; color: var(--text3); flex: 1; }
+  .order-item-total { font-weight: 700; white-space: nowrap; font-size: 13px; }
   .remove-line {
     background: none; border: none; cursor: pointer;
     color: var(--text3); font-size: 14px; padding: 0 2px;
@@ -956,8 +1009,27 @@
 
               <div class="tg-config">
                 <div class="tg-config-title">📨 Telegram</div>
-                <input id="tg-token" placeholder="Bot Token  (123456:ABC…)" autocomplete="off">
-                <input id="tg-chat" placeholder="Chat ID  (-100123456789)" autocomplete="off">
+
+                <!-- Bot Token -->
+                <div style="margin-bottom:8px;">
+                  <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:var(--text3);margin-bottom:4px;">Bot Token</div>
+                  <input id="tg-token-input" placeholder="123456:ABC-DEF…" autocomplete="off" style="margin-bottom:4px;">
+                  <button id="tg-save-token-btn" onclick="tgSaveToken()" style="width:100%;padding:6px;background:var(--accent);color:white;border:none;border-radius:6px;font-family:inherit;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:2px;">💾 Save Token</button>
+                  <div id="tg-token-saved" style="display:none;align-items:center;justify-content:space-between;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 8px;margin-bottom:2px;gap:6px;">
+                    <span id="tg-token-mask" style="font-size:11px;font-family:monospace;color:var(--text2);flex:1;word-break:break-all;"></span>
+                    <button onclick="tgClearToken()" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:11px;padding:0 2px;white-space:nowrap;">✕ Remove</button>
+                  </div>
+                </div>
+
+                <!-- Chat IDs -->
+                <div>
+                  <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:var(--text3);margin-bottom:4px;">Chat IDs</div>
+                  <div id="tg-chatid-list"></div>
+                  <div style="display:flex;gap:4px;">
+                    <input id="tg-chatid-input" placeholder="-100123456789 or @chan" style="flex:1;margin-bottom:0;">
+                    <button onclick="tgAddChatId()" style="padding:7px 10px;background:var(--accent);color:white;border:none;border-radius:6px;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0;">+ Add</button>
+                  </div>
+                </div>
               </div>
 
               <button class="btn btn-telegram" onclick="sendTelegram()">
@@ -1006,7 +1078,7 @@
         </div>
         <div class="form-grid two">
           <div class="field">
-            <label>Cost ($)</label>
+            <label>Cost (₱)</label>
             <input id="f-cost" type="number" step="0.01" min="0" placeholder="0.00">
           </div>
           <div class="field">
@@ -1417,7 +1489,7 @@ function renderTable() {
     return `<div class="table-row" onclick="openEditModal('${item.id}')">
       <div><div class="item-name">${esc(item.name || '')}</div></div>
       <div><span class="category-badge">${esc(item.category || '—')}</span></div>
-      <div class="cost">${item.cost != null ? '₱' + Number(item.cost).toFixed(2) : '—'}</div>
+      <div class="cost">${item.cost != null ? formatPeso(item.cost) : '—'}</div>
       <div><div class="stock-wrap ${sc}"><div class="stock-dot"></div><span class="stock-val">${item.inStock ?? '—'}</span><span style="font-size:11px;color:var(--text3);margin-left:2px">${sl}</span></div></div>
       <div class="row-actions" onclick="event.stopPropagation()">
         <button class="icon-btn" onclick="openEditModal('${item.id}')" title="Edit">
@@ -1779,7 +1851,7 @@ function renderPicker() {
         <div class="item-name">${esc(item.name)}</div>
         <div style="font-size:11px;color:var(--text3);margin-top:1px">${esc(item.category||'—')}</div>
       </div>
-      <div class="cost" style="font-size:13px">${item.cost != null ? '₱'+Number(item.cost).toFixed(2) : '—'}</div>
+      <div class="cost" style="font-size:13px">${item.cost != null ? formatPeso(item.cost) : '—'}</div>
       <div><div class="stock-wrap ${sc}"><div class="stock-dot"></div><span class="stock-val" style="font-size:12px">${item.inStock ?? '—'}</span></div></div>
       <div class="qty-wrap" style="justify-content:flex-end">
         <button class="qty-btn" onclick="changeQty('${item.id}', -1)">−</button>
@@ -1815,7 +1887,7 @@ function renderOrderSummary() {
   const count = lines.reduce((s,i) => s + i.qty, 0);
 
   document.getElementById('order-count').textContent = count;
-  document.getElementById('order-total').textContent = '₱' + total.toFixed(2);
+  document.getElementById('order-total').textContent = formatPeso(total);
 
   const emptyEl = document.getElementById('order-empty');
   const linesEl = document.getElementById('order-lines');
@@ -1828,13 +1900,19 @@ function renderOrderSummary() {
   emptyEl.style.display = 'none';
   linesEl.style.display = 'block';
   linesEl.innerHTML = lines.map(i => `
-    <div class="order-item-row">
-      <div style="flex:1">
-        <div class="order-item-name">${esc(i.name)}</div>
-        <div class="order-item-meta">${i.qty} × $${Number(i.cost||0).toFixed(2)}</div>
+    <div class="order-item-row collapsed" onclick="toggleOrderItem(this)">
+      <div class="order-item-summary">
+        <span class="order-item-pill">${i.qty}pc(s)</span>
+        <span class="order-item-name">${esc(i.name)}</span>
+        <span class="order-item-chevron">▾</span>
       </div>
-      <div class="order-item-total">$${i.lineTotal.toFixed(2)}</div>
-      <button class="remove-line" onclick="removeOrderLine('${i.id}')" title="Remove">✕</button>
+      <div class="order-item-detail">
+        <div class="order-item-detail-line">
+          <span class="order-item-meta">${i.qty} × ${formatPeso(i.cost||0)}</span>
+          <span class="order-item-total">${formatPeso(i.lineTotal)}</span>
+          <button class="remove-line" onclick="event.stopPropagation();removeOrderLine('${i.id}')" title="Remove">✕</button>
+        </div>
+      </div>
     </div>`).join('');
 }
 
@@ -1862,63 +1940,158 @@ function refreshOrderCats() {
 }
 
 // ═══════════════════════════════════════════════════════
-// TELEGRAM
+// CURRENCY HELPER
 // ═══════════════════════════════════════════════════════
-async function sendTelegram() {
-  const token = document.getElementById('tg-token').value.trim();
-  const chatId = document.getElementById('tg-chat').value.trim();
+function formatPeso(amount) {
+  const n = parseFloat(amount) || 0;
+  return '₱' + n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
-  if (!token || !chatId) return showToast("Enter your Bot Token and Chat ID", "error");
+// ═══════════════════════════════════════════════════════
+// COLLAPSIBLE ORDER ITEMS
+// ═══════════════════════════════════════════════════════
+function toggleOrderItem(el) {
+  el.classList.toggle('collapsed');
+}
+
+// ═══════════════════════════════════════════════════════
+// TELEGRAM — multi-chat-ID + saved token
+// ═══════════════════════════════════════════════════════
+function loadTgSettings() {
+  const raw = localStorage.getItem('tg_settings');
+  return raw ? JSON.parse(raw) : { token: '', chatIds: [] };
+}
+
+function saveTgSettings(s) {
+  localStorage.setItem('tg_settings', JSON.stringify(s));
+}
+
+function renderTgPanel() {
+  const s = loadTgSettings();
+
+  // Token row
+  const tokenWrap = document.getElementById('tg-token-wrap');
+  const tokenInput = document.getElementById('tg-token-input');
+  const tokenSaved = document.getElementById('tg-token-saved');
+  const tokenMask  = document.getElementById('tg-token-mask');
+
+  if (s.token) {
+    tokenInput.style.display = 'none';
+    document.getElementById('tg-save-token-btn').style.display = 'none';
+    tokenSaved.style.display = 'flex';
+    tokenMask.textContent = s.token.substring(0, 8) + '••••••••' + s.token.slice(-4);
+  } else {
+    tokenInput.style.display = 'block';
+    document.getElementById('tg-save-token-btn').style.display = 'block';
+    tokenSaved.style.display = 'none';
+  }
+
+  // Chat IDs list
+  const list = document.getElementById('tg-chatid-list');
+  if (!s.chatIds.length) {
+    list.innerHTML = '<div style="color:var(--text3);font-size:11px;margin-bottom:6px;">No chat IDs saved.</div>';
+  } else {
+    list.innerHTML = s.chatIds.map((id, idx) => `
+      <div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 8px;margin-bottom:4px;gap:6px;">
+        <span style="font-size:11px;font-family:monospace;color:var(--text);word-break:break-all;flex:1;">${esc(id)}</span>
+        <button onclick="tgRemoveChatId(${idx})" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:12px;padding:0 2px;line-height:1;flex-shrink:0;" title="Remove">✕</button>
+      </div>`).join('');
+  }
+}
+
+function tgSaveToken() {
+  const val = document.getElementById('tg-token-input').value.trim();
+  if (!val) return showToast("Enter a bot token", "error");
+  const s = loadTgSettings();
+  s.token = val;
+  saveTgSettings(s);
+  document.getElementById('tg-token-input').value = '';
+  renderTgPanel();
+  showToast("Bot token saved ✓", "success");
+}
+
+function tgClearToken() {
+  if (!confirm("Remove saved bot token?")) return;
+  const s = loadTgSettings();
+  s.token = '';
+  saveTgSettings(s);
+  renderTgPanel();
+}
+
+function tgAddChatId() {
+  const inp = document.getElementById('tg-chatid-input');
+  const val = inp.value.trim();
+  if (!val) return showToast("Enter a Chat ID", "error");
+  const s = loadTgSettings();
+  if (s.chatIds.includes(val)) return showToast("Already added", "error");
+  s.chatIds.push(val);
+  saveTgSettings(s);
+  inp.value = '';
+  renderTgPanel();
+}
+
+function tgRemoveChatId(idx) {
+  const s = loadTgSettings();
+  s.chatIds.splice(idx, 1);
+  saveTgSettings(s);
+  renderTgPanel();
+}
+
+async function sendTelegram() {
+  const s = loadTgSettings();
+  if (!s.token) return showToast("Save a bot token first", "error");
+  if (!s.chatIds.length) return showToast("Add at least one Chat ID", "error");
 
   const lines = getOrderItems();
   if (!lines.length) return showToast("Order is empty", "error");
 
-  const now = new Date().toLocaleString('en-US', { dateStyle:'medium', timeStyle:'short' });
-  const lineItems = lines.map((i,idx) =>
-    `${idx+1}. *${i.name}*\n   ${i.qty} pcs × $${Number(i.cost||0).toFixed(2)} = *$${i.lineTotal.toFixed(2)}*`
-  ).join('\n');
-
-  const msg =
-`🛒 *New Order*
-📅 ${now}
-─────────────────
-${lineItems}
-─────────────────
-*Total: $${getOrderTotal().toFixed(2)}*`;
+  // Message: only pieces + item name
+  const now = new Date().toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
+  const lineItems = lines.map(i => `${i.qty}pc(s) - ${i.name}`).join('\n');
+  const msg = `🛒 *Order List*\n📅 ${now}\n─────────────────\n${lineItems}`;
 
   const btn = document.querySelector('.btn-telegram');
   btn.disabled = true;
   btn.textContent = 'Sending…';
 
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: 'Markdown' })
-    });
-    const data = await res.json();
-    if (data.ok) {
-      showToast("Order sent via Telegram! ✓", "success");
-      // Save token/chat for convenience
-      localStorage.setItem('tg_token', token);
-      localStorage.setItem('tg_chat', chatId);
-    } else {
-      showToast("Telegram error: " + (data.description || 'Unknown'), "error");
+  let ok = 0, errs = [];
+  for (const chatId of s.chatIds) {
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${s.token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: 'Markdown' })
+      });
+      const data = await res.json();
+      if (data.ok) ok++;
+      else errs.push(chatId + ': ' + (data.description || 'error'));
+    } catch(e) {
+      errs.push(chatId + ': network error');
     }
-  } catch(e) {
-    showToast("Network error sending to Telegram", "error");
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248-2.04 9.613c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.37 14.53l-2.95-.924c-.642-.204-.655-.642.134-.953l11.52-4.443c.535-.194 1.003.13.488 1.038z"/></svg> Send via Telegram`;
   }
+
+  btn.disabled = false;
+  btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248-2.04 9.613c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.37 14.53l-2.95-.924c-.642-.204-.655-.642.134-.953l11.52-4.443c.535-.194 1.003.13.488 1.038z"/></svg> Send via Telegram`;
+
+  if (ok === s.chatIds.length) showToast(`Sent to ${ok} chat(s) ✓`, "success");
+  else if (ok > 0) showToast(`Sent to ${ok}/${s.chatIds.length} — some failed`, "");
+  else showToast("Send failed: " + errs[0], "error");
 }
 
-// ── Restore saved Telegram credentials ──
+// ── Init Telegram panel on load ──
 function restoreTgCreds() {
-  const t = localStorage.getItem('tg_token');
-  const c = localStorage.getItem('tg_chat');
-  if (t) document.getElementById('tg-token').value = t;
-  if (c) document.getElementById('tg-chat').value = c;
+  // Migrate old single-chat storage if present
+  const oldToken = localStorage.getItem('tg_token');
+  const oldChat  = localStorage.getItem('tg_chat');
+  if (oldToken || oldChat) {
+    const s = loadTgSettings();
+    if (oldToken && !s.token) s.token = oldToken;
+    if (oldChat && !s.chatIds.includes(oldChat)) s.chatIds.push(oldChat);
+    saveTgSettings(s);
+    localStorage.removeItem('tg_token');
+    localStorage.removeItem('tg_chat');
+  }
+  renderTgPanel();
 }
 
 // ═══════════════════════════════════════════════════════
