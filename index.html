@@ -1815,7 +1815,7 @@ function renderOrderSummary() {
   const count = lines.reduce((s,i) => s + i.qty, 0);
 
   document.getElementById('order-count').textContent = count;
-  document.getElementById('order-total').textContent = '$' + total.toFixed(2);
+  document.getElementById('order-total').textContent = '₱' + total.toFixed(2);
 
   const emptyEl = document.getElementById('order-empty');
   const linesEl = document.getElementById('order-lines');
