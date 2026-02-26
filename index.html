@@ -273,7 +273,7 @@
   }
   .th:hover { color: var(--text); }
 
-  .table-body { max-height: 520px; overflow-y: auto; }
+  .table-body { min-height: 60px; max-height: 60vh; overflow-y: auto; }
   .table-row {
     display: grid;
     grid-template-columns: 2fr 1.2fr 1fr 1fr 100px;
@@ -1113,19 +1113,26 @@ const FIELD_LABELS = { name: 'Name', category: 'Category', cost: 'Cost', inStock
 // FIREBASE INIT — Realtime Database
 // ═══════════════════════════════════════════════════════
 function initFirebase() {
+  // Show cached local data immediately — table won't be blank while Firebase connects
+  const cached = localStorage.getItem('stockr_items');
+  if (cached) {
+    try { items = JSON.parse(cached); } catch(e) { items = []; }
+    requestAnimationFrame(() => updateUI());
+  }
+
   try {
     if (FIREBASE_CONFIG.apiKey === "YOUR_API_KEY") {
       console.log("Firebase not configured — using local storage.");
-      loadLocal();
+      if (!cached) loadLocal();
       return;
     }
     firebase.initializeApp(FIREBASE_CONFIG);
     db = firebase.database();
     useFirebase = true;
-    loadFromFirebase();
+    loadFromFirebase(); // will overwrite with live data once it arrives
   } catch (e) {
     console.warn("Firebase init failed:", e);
-    loadLocal();
+    if (!cached) loadLocal();
   }
 }
 
@@ -1133,11 +1140,12 @@ let listenerPaused = false;
 
 function loadFromFirebase() {
   db.ref("inventory").on("value", snap => {
-    if (listenerPaused) return; // skip UI updates during bulk write
+    if (listenerPaused) return;
     const data = snap.val();
     items = data ? Object.entries(data).map(([id, val]) => ({ id, ...val })) : [];
     saveLocal();
-    updateUI();
+    // Defer render to next tick so DOM is always ready
+    requestAnimationFrame(() => updateUI());
   }, err => {
     console.warn("RTDB read error:", err);
     showToast("Firebase error, using local", "error");
@@ -1234,7 +1242,13 @@ function sortBy(key) {
 function updateUI() {
   updateStats();
   updateCategorySelect();
+  // Always render table — even if page is hidden, innerHTML update still works
   renderTable();
+  // If on order page, refresh the picker too
+  if (currentView === 'order') {
+    refreshOrderCats();
+    renderPicker();
+  }
 }
 
 function updateStats() {
