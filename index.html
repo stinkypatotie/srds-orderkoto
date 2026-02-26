@@ -1417,7 +1417,7 @@ function renderTable() {
     return `<div class="table-row" onclick="openEditModal('${item.id}')">
       <div><div class="item-name">${esc(item.name || '')}</div></div>
       <div><span class="category-badge">${esc(item.category || '—')}</span></div>
-      <div class="cost">${item.cost != null ? '$' + Number(item.cost).toFixed(2) : '—'}</div>
+      <div class="cost">${item.cost != null ? '₱' + Number(item.cost).toFixed(2) : '—'}</div>
       <div><div class="stock-wrap ${sc}"><div class="stock-dot"></div><span class="stock-val">${item.inStock ?? '—'}</span><span style="font-size:11px;color:var(--text3);margin-left:2px">${sl}</span></div></div>
       <div class="row-actions" onclick="event.stopPropagation()">
         <button class="icon-btn" onclick="openEditModal('${item.id}')" title="Edit">
