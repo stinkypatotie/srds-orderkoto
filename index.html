@@ -813,6 +813,12 @@
       <span class="logo-name">Stockr</span>
     </div>
 
+    <!-- STORE SWITCHER -->
+    <div style="display:flex;gap:4px;margin-bottom:20px;background:var(--bg);border-radius:var(--radius-sm);padding:3px;">
+      <button id="store-main-btn" onclick="switchStore('main')" style="flex:1;padding:6px 4px;font-size:11px;font-weight:700;border:none;border-radius:6px;cursor:pointer;background:var(--accent);color:white;transition:all 0.15s;font-family:inherit;">MAIN</button>
+      <button id="store-branch-btn" onclick="switchStore('branch')" style="flex:1;padding:6px 4px;font-size:11px;font-weight:700;border:none;border-radius:6px;cursor:pointer;background:transparent;color:var(--text2);transition:all 0.15s;font-family:inherit;">BRANCH</button>
+    </div>
+
     <div class="nav-section">
       <div class="nav-label">Main</div>
       <div class="nav-item active" onclick="setView('inventory')">
@@ -963,6 +969,11 @@
 
           <!-- LEFT: Item Picker -->
           <div>
+            <!-- Order filter tabs -->
+            <div style="display:flex;gap:4px;margin-bottom:12px;background:var(--bg);border-radius:var(--radius-sm);padding:3px;width:fit-content;">
+              <button id="picker-tab-all" onclick="setPickerTab('all')" style="padding:6px 14px;font-size:12px;font-weight:700;border:none;border-radius:6px;cursor:pointer;background:var(--accent);color:white;transition:all 0.15s;font-family:inherit;">All Items</button>
+              <button id="picker-tab-alert" onclick="setPickerTab('alert')" style="padding:6px 14px;font-size:12px;font-weight:700;border:none;border-radius:6px;cursor:pointer;background:transparent;color:var(--text2);transition:all 0.15s;font-family:inherit;">Alert Items</button>
+            </div>
             <div class="order-search-bar">
               <div class="search-wrap">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -989,7 +1000,10 @@
           <!-- RIGHT: Order Summary -->
           <div class="order-panel">
             <div class="order-panel-header">
-              <div class="order-panel-title">Order Summary</div>
+              <div>
+                <div class="order-panel-title">Order Summary</div>
+                <div id="order-store-label" style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--accent);margin-top:1px;">MAIN STORE</div>
+              </div>
               <span class="order-count" id="order-count">0</span>
             </div>
 
@@ -1178,6 +1192,11 @@ let sortKey = 'name';
 let sortDir = 1;
 let csvRows = [];
 let csvHeaders = [];
+let currentStore = localStorage.getItem('currentStore') || 'main'; // 'main' or 'branch'
+let pickerTab = 'all'; // 'all' or 'alert'
+
+const STORE_NAMES = { main: 'Main Store', branch: 'Branch Store' };
+const STORE_DB_PATHS = { main: 'inventory', branch: 'inventory_branch' };
 
 const FIELDS = ['name', 'category', 'cost', 'inStock', 'lowStock'];
 const FIELD_LABELS = { name: 'Name', category: 'Category', cost: 'Cost', inStock: 'In Stock', lowStock: 'Low Stock' };
@@ -1302,18 +1321,12 @@ let listenerPaused = false;
 let dataListenerOn = false;
 
 function loadFromFirebase() {
-  if (dataListenerOn) return; // prevent duplicate listeners
-
-  // Only proceed if a user is actually signed in
+  if (dataListenerOn) return;
   const user = firebase.auth().currentUser;
-  if (!user) {
-    showLoginOverlay();
-    return;
-  }
-
+  if (!user) { showLoginOverlay(); return; }
   dataListenerOn = true;
-
-  db.ref("inventory").on("value", snap => {
+  const path = STORE_DB_PATHS[currentStore];
+  db.ref(path).on("value", snap => {
     if (listenerPaused) return;
     const data = snap.val();
     items = data ? Object.entries(data).map(([id, val]) => ({ id, ...val })) : [];
@@ -1327,16 +1340,55 @@ function loadFromFirebase() {
   });
 }
 
+// Switch between Main and Branch databases
+function switchStore(store) {
+  if (store === currentStore) return;
+  // Detach current listener
+  if (useFirebase && dataListenerOn) {
+    db.ref(STORE_DB_PATHS[currentStore]).off();
+    dataListenerOn = false;
+  }
+  currentStore = store;
+  localStorage.setItem('currentStore', store);
+  items = [];
+  orderCart = {};
+  updateStoreUI();
+  // Load cached data for this store
+  const cached = localStorage.getItem('stockr_items_' + store);
+  if (cached) { try { items = JSON.parse(cached); } catch(e) { items = []; } }
+  requestAnimationFrame(() => updateUI());
+  // Reconnect Firebase listener for new store
+  if (useFirebase) loadFromFirebase();
+  else loadLocal();
+}
+
+function updateStoreUI() {
+  // Switcher buttons
+  const mBtn = document.getElementById('store-main-btn');
+  const bBtn = document.getElementById('store-branch-btn');
+  if (mBtn && bBtn) {
+    mBtn.style.background = currentStore === 'main' ? 'var(--accent)' : 'transparent';
+    mBtn.style.color = currentStore === 'main' ? 'white' : 'var(--text2)';
+    bBtn.style.background = currentStore === 'branch' ? 'var(--accent)' : 'transparent';
+    bBtn.style.color = currentStore === 'branch' ? 'white' : 'var(--text2)';
+  }
+  // Order summary store label
+  const lbl = document.getElementById('order-store-label');
+  if (lbl) lbl.textContent = STORE_NAMES[currentStore].toUpperCase();
+  // Topbar subtle indicator
+  document.title = 'Stockr — ' + STORE_NAMES[currentStore];
+}
+
 async function saveToFirebase(item) {
   if (!useFirebase) return saveLocal();
   try {
     const { id, ...data } = item;
     if (id && !id.startsWith('local-')) {
       // Update existing node
-      await db.ref(`inventory/${id}`).set(data);
+      await db.ref(`${STORE_DB_PATHS[currentStore]}/${id}`).set(data);
     } else {
       // Push creates a new unique key
-      const ref = db.ref("inventory").push();
+      const ref = db.ref(STORE_DB_PATHS[currentStore]).push();
       item.id = ref.key;
       await ref.set({ ...data });
     }
@@ -1350,7 +1402,7 @@ async function saveToFirebase(item) {
 async function deleteFromFirebase(id) {
   if (!useFirebase || !id || id.startsWith('local-')) return;
   try {
-    await db.ref(`inventory/${id}`).remove();
+    await db.ref(`${STORE_DB_PATHS[currentStore]}/${id}`).remove();
   } catch(e) {
     console.error("Delete error:", e);
   }
@@ -1359,9 +1411,9 @@ async function deleteFromFirebase(id) {
 // ═══════════════════════════════════════════════════════
 // LOCAL STORAGE FALLBACK
 // ═══════════════════════════════════════════════════════
-function saveLocal() { localStorage.setItem('stockr_items', JSON.stringify(items)); }
+function saveLocal() { localStorage.setItem('stockr_items_' + currentStore, JSON.stringify(items)); }
 function loadLocal() {
-  const d = localStorage.getItem('stockr_items');
+  const d = localStorage.getItem('stockr_items_' + currentStore);
   items = d ? JSON.parse(d) : [];
   updateUI();
 }
@@ -1490,7 +1542,7 @@ function renderTable() {
       <div><div class="item-name">${esc(item.name || '')}</div></div>
       <div><span class="category-badge">${esc(item.category || '—')}</span></div>
       <div class="cost">${item.cost != null ? formatPeso(item.cost) : '—'}</div>
-      <div><div class="stock-wrap ${sc}"><div class="stock-dot"></div><span class="stock-val">${item.inStock ?? '—'}</span><span style="font-size:11px;color:var(--text3);margin-left:2px">${sl}</span></div></div>
+      <div onclick="event.stopPropagation()"><div class="stock-wrap ${sc}"><div class="stock-dot"></div><input class="inline-stock-input" type="number" min="0" value="${item.inStock ?? 0}" onchange="quickUpdateStock('${item.id}', this.value)" onfocus="this.select()" style="width:52px;font-weight:600;font-size:13px;border:1px solid var(--border);border-radius:4px;padding:2px 5px;background:var(--surface);font-family:inherit;outline:none;cursor:text;" /><span style="font-size:11px;color:var(--text3);margin-left:2px">${sl}</span></div></div>
       <div class="row-actions" onclick="event.stopPropagation()">
         <button class="icon-btn" onclick="openEditModal('${item.id}')" title="Edit">
           <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12l3-1 6-6-2-2-6 6-1 3zM9 3l2 2"/></svg>
@@ -1550,7 +1602,7 @@ async function saveItem() {
     if (useFirebase) {
       // Firebase listener will update items[] automatically
       const { id, ...data } = item;
-      await db.ref(`inventory/${id}`).set(data)
+      await db.ref(`${STORE_DB_PATHS[currentStore]}/${id}`).set(data)
         .catch(e => { showToast("Save failed: " + e.message, "error"); return; });
     } else {
       const idx = items.findIndex(i => i.id === editingId);
@@ -1561,7 +1613,7 @@ async function saveItem() {
   } else {
     item.createdAt = Date.now();
     if (useFirebase) {
-      const ref = db.ref("inventory").push();
+      const ref = db.ref(STORE_DB_PATHS[currentStore]).push();
       await ref.set({ name: item.name, category: item.category, cost: item.cost,
                       inStock: item.inStock, lowStock: item.lowStock, createdAt: item.createdAt, updatedAt: item.updatedAt })
         .catch(e => { showToast("Save failed: " + e.message, "error"); return; });
@@ -1579,7 +1631,7 @@ async function saveItem() {
 async function deleteItem(id) {
   if (!confirm("Delete this item?")) return;
   if (useFirebase) {
-    await db.ref(`inventory/${id}`).remove()
+    await db.ref(`${STORE_DB_PATHS[currentStore]}/${id}`).remove()
       .catch(e => { showToast("Delete failed: " + e.message, "error"); return; });
     // Firebase listener will remove it from items[] automatically
   } else {
@@ -1710,7 +1762,7 @@ async function importCSV() {
         const updates = {};
         chunk.forEach(item => {
           const key = db.ref("inventory").push().key;
-          updates[`inventory/${key}`] = item;
+          updates[`${STORE_DB_PATHS[currentStore]}/${key}`] = item;
         });
         await db.ref().update(updates);
         done += chunk.length;
@@ -1718,7 +1770,7 @@ async function importCSV() {
       }
 
       // One final read — sync everything and render once
-      const snap = await db.ref("inventory").get();
+      const snap = await db.ref(STORE_DB_PATHS[currentStore]).get();
       const data = snap.val();
       items = data ? Object.entries(data).map(([id, val]) => ({ id, ...val })) : [];
       saveLocal();
@@ -1828,18 +1880,19 @@ function renderPicker() {
   const cat = document.getElementById('order-cat')?.value || '';
 
   let filtered = items.filter(i => {
-    // Only show items that need attention (low or out of stock)
-    const needsAttention = getStockClass(i) === 'low-stock' || getStockClass(i) === 'out-stock';
+    const sc = getStockClass(i);
+    const alertOnly = pickerTab === 'alert' ? (sc === 'low-stock' || sc === 'out-stock') : true;
     const matchQ = !q || i.name?.toLowerCase().includes(q) || i.category?.toLowerCase().includes(q);
     const matchC = !cat || i.category === cat;
-    return needsAttention && matchQ && matchC;
+    return alertOnly && matchQ && matchC;
   }).sort((a,b) => (a.name||'').localeCompare(b.name||''));
 
   const body = document.getElementById('picker-body');
   if (!filtered.length) {
-    body.innerHTML = `<div class="empty-state" style="padding:32px">
-      <div class="empty-desc">${items.length ? 'All items are fully stocked! 🎉' : 'No items in database yet.'}</div>
-    </div>`;
+    const msg = pickerTab === 'alert'
+      ? (items.length ? 'All items are fully stocked! 🎉' : 'No items in database yet.')
+      : 'No items match your search.';
+    body.innerHTML = `<div class="empty-state" style="padding:32px"><div class="empty-desc">${msg}</div></div>`;
     return;
   }
 
@@ -1900,18 +1953,21 @@ function renderOrderSummary() {
   emptyEl.style.display = 'none';
   linesEl.style.display = 'block';
   linesEl.innerHTML = lines.map(i => `
-    <div class="order-item-row collapsed" onclick="toggleOrderItem(this)">
-      <div class="order-item-summary">
-        <span class="order-item-pill">${i.qty}pc(s)</span>
-        <span class="order-item-name">${esc(i.name)}</span>
-        <span class="order-item-chevron">▾</span>
-      </div>
-      <div class="order-item-detail">
-        <div class="order-item-detail-line">
-          <span class="order-item-meta">${i.qty} × ${formatPeso(i.cost||0)}</span>
-          <span class="order-item-total">${formatPeso(i.lineTotal)}</span>
-          <button class="remove-line" onclick="event.stopPropagation();removeOrderLine('${i.id}')" title="Remove">✕</button>
+    <div class="order-item-row">
+      <div class="order-item-summary" style="gap:8px;align-items:center;">
+        <div onclick="event.stopPropagation()" style="display:flex;align-items:center;gap:4px;flex-shrink:0;">
+          <button class="qty-btn" style="width:22px;height:22px;font-size:13px;" onclick="summaryChangeQty('${i.id}',-1)">−</button>
+          <input type="number" min="0" value="${i.qty}"
+            style="width:40px;text-align:center;font-weight:700;font-size:13px;border:1px solid var(--border);border-radius:5px;padding:2px 4px;font-family:inherit;background:var(--surface);outline:none;"
+            onchange="summarySetQty('${i.id}',this.value)"
+            onfocus="this.select()">
+          <button class="qty-btn" style="width:22px;height:22px;font-size:13px;" onclick="summaryChangeQty('${i.id}',1)">+</button>
         </div>
+        <span class="order-item-name">${esc(i.name)}</span>
+        <button class="remove-line" onclick="event.stopPropagation();removeOrderLine('${i.id}')" title="Remove" style="margin-left:auto;">✕</button>
+      </div>
+      <div style="padding:0 0 7px 0;font-size:11px;color:var(--text3);">
+        ${i.qty} × ${formatPeso(i.cost||0)} = <strong style="color:var(--text)">${formatPeso(i.lineTotal)}</strong>
       </div>
     </div>`).join('');
 }
@@ -1923,20 +1979,57 @@ function removeOrderLine(id) {
   renderOrderSummary();
 }
 
+function summaryChangeQty(id, delta) {
+  const cur = orderCart[id] || 0;
+  const next = Math.max(0, cur + delta);
+  if (next === 0) { removeOrderLine(id); return; }
+  orderCart[id] = next;
+  // Also sync picker input if visible
+  const pickerInp = document.getElementById(`qty-${id}`);
+  if (pickerInp) pickerInp.value = next;
+  renderOrderSummary();
+}
+
+function summarySetQty(id, val) {
+  const n = Math.max(0, parseInt(val) || 0);
+  if (n === 0) { removeOrderLine(id); return; }
+  orderCart[id] = n;
+  const pickerInp = document.getElementById(`qty-${id}`);
+  if (pickerInp) pickerInp.value = n;
+  renderOrderSummary();
+}
+
 function clearOrder() {
   orderCart = {};
   renderPicker();
   renderOrderSummary();
 }
 
+// ── Picker tab switcher ──
+function setPickerTab(tab) {
+  pickerTab = tab;
+  const allBtn = document.getElementById('picker-tab-all');
+  const alertBtn = document.getElementById('picker-tab-alert');
+  if (allBtn && alertBtn) {
+    allBtn.style.background = tab === 'all' ? 'var(--accent)' : 'transparent';
+    allBtn.style.color = tab === 'all' ? 'white' : 'var(--text2)';
+    alertBtn.style.background = tab === 'alert' ? 'var(--accent)' : 'transparent';
+    alertBtn.style.color = tab === 'alert' ? 'white' : 'var(--text2)';
+  }
+  refreshOrderCats();
+  renderPicker();
+}
+
 // ── Update category dropdown when order page opens ──
 function refreshOrderCats() {
-  const attentionItems = items.filter(i => getStockClass(i) === 'low-stock' || getStockClass(i) === 'out-stock');
-  const cats = [...new Set(attentionItems.map(i => i.category).filter(Boolean))].sort();
+  const base = pickerTab === 'alert'
+    ? items.filter(i => getStockClass(i) === 'low-stock' || getStockClass(i) === 'out-stock')
+    : items;
+  const cats = [...new Set(base.map(i => i.category).filter(Boolean))].sort();
   const sel = document.getElementById('order-cat');
   if (!sel) return;
   const cur = sel.value;
-  sel.innerHTML = '<option value="">All Categories</option>' + cats.map(c => `<option ${c===cur?'selected':''}>${esc(c)}</option>`).join('');
+  sel.innerHTML = '<option value="">All Categories</option>' + cats.map(cat => `<option ${cat===cur?'selected':''}>${esc(cat)}</option>`).join('');
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2048,7 +2141,8 @@ async function sendTelegram() {
   // Message: only pieces + item name
   const now = new Date().toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
   const lineItems = lines.map(i => `${i.qty}pc(s) - ${i.name}`).join('\n');
-  const msg = `🛒 *Order List*\n📅 ${now}\n─────────────────\n${lineItems}`;
+  const storeName = STORE_NAMES[currentStore].toUpperCase();
+  const msg = `🛒 *Order List — ${storeName}*\n📅 ${now}\n─────────────────\n${lineItems}`;
 
   const btn = document.querySelector('.btn-telegram');
   btn.disabled = true;
@@ -2094,11 +2188,31 @@ function restoreTgCreds() {
   renderTgPanel();
 }
 
+// ── Quick inline stock update from table ──
+async function quickUpdateStock(id, val) {
+  const n = Math.max(0, parseInt(val) || 0);
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  item.inStock = n;
+  // Update stats and status dots immediately without full re-render
+  updateStats();
+  if (useFirebase) {
+    const { id: itemId, ...data } = item;
+    await db.ref(`${STORE_DB_PATHS[currentStore]}/${itemId}`).set(data)
+      .catch(e => showToast("Update failed: " + e.message, "error"));
+  } else {
+    saveLocal();
+    renderTable();
+    updateStats();
+  }
+}
+
 // ═══════════════════════════════════════════════════════
 // BOOT
 // ═══════════════════════════════════════════════════════
 initFirebase();
 restoreTgCreds();
+updateStoreUI();
 </script>
 </body>
 </html>
