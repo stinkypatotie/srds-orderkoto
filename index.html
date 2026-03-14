@@ -1442,6 +1442,7 @@ function setView(v) {
     refreshOrderCats();
     renderPicker();
     renderOrderSummary();
+    renderTgPanel();
   } else {
     currentFilter = v === 'attention' ? 'attention' : 'all';
     document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
