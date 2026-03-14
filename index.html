@@ -2074,10 +2074,13 @@ async function saveTgSettings(s) {
   if (useFirebase && firebase.auth().currentUser) {
     try {
       await db.ref(TG_SETTINGS_PATH).set(s);
+      return true;
     } catch(e) {
-      showToast("Sync error: " + e.message, "error");
+      showToast('Firebase permission denied — add tg_settings rules', 'error');
+      return false;
     }
   }
+  return true;
 }
 
 async function renderTgPanel() {
@@ -2117,7 +2120,8 @@ async function tgSaveToken() {
   if (!val) return showToast("Enter a bot token", "error");
   const s = await loadTgSettings();
   s.token = val;
-  await saveTgSettings(s);
+  const ok = await saveTgSettings(s);
+  if (!ok) return;
   document.getElementById('tg-token-input').value = '';
   await renderTgPanel();
   showToast("Bot token saved ✓", "success");
@@ -2127,7 +2131,8 @@ async function tgClearToken() {
   if (!confirm("Remove saved bot token?")) return;
   const s = await loadTgSettings();
   s.token = '';
-  await saveTgSettings(s);
+  const ok = await saveTgSettings(s);
+  if (!ok) return;
   await renderTgPanel();
 }
 
@@ -2139,7 +2144,8 @@ async function tgAddChatId() {
   if (s.chatIds && s.chatIds.includes(val)) return showToast("Already added", "error");
   if (!s.chatIds) s.chatIds = [];
   s.chatIds.push(val);
-  await saveTgSettings(s);
+  const ok = await saveTgSettings(s);
+  if (!ok) return;
   inp.value = '';
   await renderTgPanel();
 }
@@ -2147,7 +2153,8 @@ async function tgAddChatId() {
 async function tgRemoveChatId(idx) {
   const s = await loadTgSettings();
   s.chatIds.splice(idx, 1);
-  await saveTgSettings(s);
+  const ok = await saveTgSettings(s);
+  if (!ok) return;
   await renderTgPanel();
 }
 
