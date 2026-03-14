@@ -1326,6 +1326,7 @@ function loadFromFirebase() {
   if (!user) { showLoginOverlay(); return; }
   dataListenerOn = true;
   const path = STORE_DB_PATHS[currentStore];
+  setupTgListener();
   db.ref(path).on("value", snap => {
     if (listenerPaused) return;
     const data = snap.val();
@@ -2048,22 +2049,40 @@ function toggleOrderItem(el) {
 }
 
 // ═══════════════════════════════════════════════════════
-// TELEGRAM — multi-chat-ID + saved token
+// TELEGRAM — multi-chat-ID + saved token (Firebase-synced)
 // ═══════════════════════════════════════════════════════
-function loadTgSettings() {
+const TG_SETTINGS_PATH = 'tg_settings';
+
+async function loadTgSettings() {
+  if (useFirebase && firebase.auth().currentUser) {
+    try {
+      const snap = await db.ref(TG_SETTINGS_PATH).once('value');
+      const val = snap.val();
+      if (val) {
+        localStorage.setItem('tg_settings', JSON.stringify(val));
+        return val;
+      }
+    } catch(e) { /* fall through to localStorage */ }
+  }
   const raw = localStorage.getItem('tg_settings');
   return raw ? JSON.parse(raw) : { token: '', chatIds: [] };
 }
 
-function saveTgSettings(s) {
+async function saveTgSettings(s) {
   localStorage.setItem('tg_settings', JSON.stringify(s));
+  if (useFirebase && firebase.auth().currentUser) {
+    try {
+      await db.ref(TG_SETTINGS_PATH).set(s);
+    } catch(e) {
+      showToast("Sync error: " + e.message, "error");
+    }
+  }
 }
 
-function renderTgPanel() {
-  const s = loadTgSettings();
+async function renderTgPanel() {
+  const s = await loadTgSettings();
 
   // Token row
-  const tokenWrap = document.getElementById('tg-token-wrap');
   const tokenInput = document.getElementById('tg-token-input');
   const tokenSaved = document.getElementById('tg-token-saved');
   const tokenMask  = document.getElementById('tg-token-mask');
@@ -2081,7 +2100,7 @@ function renderTgPanel() {
 
   // Chat IDs list
   const list = document.getElementById('tg-chatid-list');
-  if (!s.chatIds.length) {
+  if (!s.chatIds || !s.chatIds.length) {
     list.innerHTML = '<div style="color:var(--text3);font-size:11px;margin-bottom:6px;">No chat IDs saved.</div>';
   } else {
     list.innerHTML = s.chatIds.map((id, idx) => `
@@ -2092,46 +2111,47 @@ function renderTgPanel() {
   }
 }
 
-function tgSaveToken() {
+async function tgSaveToken() {
   const val = document.getElementById('tg-token-input').value.trim();
   if (!val) return showToast("Enter a bot token", "error");
-  const s = loadTgSettings();
+  const s = await loadTgSettings();
   s.token = val;
-  saveTgSettings(s);
+  await saveTgSettings(s);
   document.getElementById('tg-token-input').value = '';
-  renderTgPanel();
+  await renderTgPanel();
   showToast("Bot token saved ✓", "success");
 }
 
-function tgClearToken() {
+async function tgClearToken() {
   if (!confirm("Remove saved bot token?")) return;
-  const s = loadTgSettings();
+  const s = await loadTgSettings();
   s.token = '';
-  saveTgSettings(s);
-  renderTgPanel();
+  await saveTgSettings(s);
+  await renderTgPanel();
 }
 
-function tgAddChatId() {
+async function tgAddChatId() {
   const inp = document.getElementById('tg-chatid-input');
   const val = inp.value.trim();
   if (!val) return showToast("Enter a Chat ID", "error");
-  const s = loadTgSettings();
-  if (s.chatIds.includes(val)) return showToast("Already added", "error");
+  const s = await loadTgSettings();
+  if (s.chatIds && s.chatIds.includes(val)) return showToast("Already added", "error");
+  if (!s.chatIds) s.chatIds = [];
   s.chatIds.push(val);
-  saveTgSettings(s);
+  await saveTgSettings(s);
   inp.value = '';
-  renderTgPanel();
+  await renderTgPanel();
 }
 
-function tgRemoveChatId(idx) {
-  const s = loadTgSettings();
+async function tgRemoveChatId(idx) {
+  const s = await loadTgSettings();
   s.chatIds.splice(idx, 1);
-  saveTgSettings(s);
-  renderTgPanel();
+  await saveTgSettings(s);
+  await renderTgPanel();
 }
 
 async function sendTelegram() {
-  const s = loadTgSettings();
+  const s = await loadTgSettings();
   if (!s.token) return showToast("Save a bot token first", "error");
   if (!s.chatIds.length) return showToast("Add at least one Chat ID", "error");
 
@@ -2173,19 +2193,37 @@ async function sendTelegram() {
 }
 
 // ── Init Telegram panel on load ──
-function restoreTgCreds() {
-  // Migrate old single-chat storage if present
+async function restoreTgCreds() {
+  // Migrate old single-chat storage if present (localStorage → Firebase)
   const oldToken = localStorage.getItem('tg_token');
   const oldChat  = localStorage.getItem('tg_chat');
   if (oldToken || oldChat) {
-    const s = loadTgSettings();
+    const s = await loadTgSettings();
     if (oldToken && !s.token) s.token = oldToken;
-    if (oldChat && !s.chatIds.includes(oldChat)) s.chatIds.push(oldChat);
-    saveTgSettings(s);
+    if (oldChat && (!s.chatIds || !s.chatIds.includes(oldChat))) {
+      if (!s.chatIds) s.chatIds = [];
+      s.chatIds.push(oldChat);
+    }
+    await saveTgSettings(s);
     localStorage.removeItem('tg_token');
     localStorage.removeItem('tg_chat');
   }
   renderTgPanel();
+}
+
+// ── Real-time Firebase listener for tg_settings ──
+// Keeps all authorized devices in sync automatically
+let tgListenerOn = false;
+function setupTgListener() {
+  if (tgListenerOn || !useFirebase) return;
+  tgListenerOn = true;
+  db.ref(TG_SETTINGS_PATH).on('value', snap => {
+    const val = snap.val();
+    if (val) {
+      localStorage.setItem('tg_settings', JSON.stringify(val));
+      renderTgPanel();
+    }
+  });
 }
 
 // ── Quick inline stock update from table ──
