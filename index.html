@@ -782,6 +782,27 @@
   .btn-telegram:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn-clear { width: 100%; justify-content: center; margin-top: 8px; }
 
+  /* ── ORDER ITEM NAME TOOLTIP ── */
+  .order-name-tooltip {
+    position: fixed;
+    z-index: 9999;
+    background: var(--text);
+    color: white;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 5px 10px;
+    border-radius: 6px;
+    pointer-events: none;
+    white-space: nowrap;
+    box-shadow: var(--shadow-lg);
+    opacity: 0;
+    transition: opacity 0.1s;
+    max-width: 260px;
+    white-space: normal;
+    line-height: 1.4;
+  }
+  .order-name-tooltip.visible { opacity: 1; }
+
   /* PAGE VISIBILITY */
   .page { display: none; }
   .page.active { display: block; }
@@ -2200,6 +2221,29 @@ async function sendTelegram() {
   else showToast("Send failed: " + errs[0], "error");
 }
 
+// ═══════════════════════════════════════════════════════
+// ORDER ITEM NAME TOOLTIP
+// ═══════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', function() {
+  const tip = document.getElementById('order-name-tooltip');
+
+  document.addEventListener('mousemove', function(e) {
+    const nameEl = e.target.closest('.order-item-name');
+    if (nameEl) {
+      tip.textContent = nameEl.textContent.trim();
+      let x = e.clientX + 14;
+      let y = e.clientY + 18;
+      if (x + tip.offsetWidth > window.innerWidth - 8) x = e.clientX - tip.offsetWidth - 8;
+      if (y + tip.offsetHeight > window.innerHeight - 8) y = e.clientY - tip.offsetHeight - 8;
+      tip.style.left = x + 'px';
+      tip.style.top  = y + 'px';
+      tip.classList.add('visible');
+    } else {
+      tip.classList.remove('visible');
+    }
+  });
+});
+
 // ── Init Telegram panel on load ──
 async function restoreTgCreds() {
   // Migrate old single-chat storage if present (localStorage → Firebase)
@@ -2260,5 +2304,8 @@ initFirebase();
 restoreTgCreds();
 updateStoreUI();
 </script>
+<!-- ORDER ITEM NAME TOOLTIP -->
+<div id="order-name-tooltip" class="order-name-tooltip"></div>
+
 </body>
 </html>
