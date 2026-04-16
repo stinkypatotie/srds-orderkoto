@@ -299,6 +299,18 @@
     color: var(--text2);
     border: 1px solid var(--border);
   }
+  .subcat-badge {
+    display: inline-flex; align-items: center;
+    padding: 2px 7px;
+    border-radius: 20px;
+    font-size: 10px;
+    font-weight: 500;
+    background: var(--accent-light);
+    color: var(--accent);
+    border: 1px solid #e8c4a0;
+    margin-top: 3px;
+  }
+  .cat-subcat-wrap { display: flex; flex-direction: column; gap: 0; }
 
   .cost { font-weight: 600; font-size: 14px; }
 
@@ -943,6 +955,12 @@
           <div class="filter-tab" onclick="setFilter('in-stock', this)">In Stock</div>
           <div class="filter-tab" onclick="setFilter('attention', this)">Needs Attention</div>
         </div>
+        <select class="cat-select" id="inv-cat" onchange="setInvCat(this.value)" style="min-width:130px;">
+          <option value="">All Categories</option>
+        </select>
+        <select class="cat-select" id="inv-subcat" onchange="setInvSubcat(this.value)" style="min-width:130px;">
+          <option value="">All Subcategories</option>
+        </select>
         <div class="toolbar-right">
           <button class="btn btn-ghost btn-sm" onclick="openCSVModal()">
             <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -1002,8 +1020,11 @@
                 </svg>
                 <input class="search-input" id="order-search" placeholder="Search items…" oninput="renderPicker()">
               </div>
-              <select class="cat-select" id="order-cat" onchange="renderPicker()">
+              <select class="cat-select" id="order-cat" onchange="onOrderCatChange()">
                 <option value="">All Categories</option>
+              </select>
+              <select class="cat-select" id="order-subcat" onchange="renderPicker()">
+                <option value="">All Subcategories</option>
               </select>
             </div>
 
@@ -1103,13 +1124,23 @@
         </div>
         <div class="field">
           <label>Category</label>
-          <select id="f-category">
+          <select id="f-category" onchange="updateModalSubcats()">
             <option value="">— Select or type below —</option>
           </select>
         </div>
         <div class="field">
           <label>New Category</label>
-          <input id="f-newcat" placeholder="Or type a new category">
+          <input id="f-newcat" placeholder="Or type a new category" oninput="updateModalSubcats()">
+        </div>
+        <div class="field">
+          <label>Subcategory</label>
+          <select id="f-subcategory">
+            <option value="">— None —</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>New Subcategory</label>
+          <input id="f-newsubcat" placeholder="Or type a new subcategory">
         </div>
         <div class="form-grid two">
           <div class="field">
@@ -1147,7 +1178,7 @@
     <div class="modal-body">
       <div class="config-note">
         <strong>💡 CSV Format Tips</strong>
-        Accepted columns: <code>name</code>, <code>category</code>, <code>cost</code>, <code>in_stock</code> / <code>quantity</code>, <code>low_stock</code> / <code>low_threshold</code>. Column names are flexible — you'll map them below.
+        Accepted columns: <code>name</code>, <code>category</code>, <code>subcategory</code>, <code>cost</code>, <code>in_stock</code> / <code>quantity</code>, <code>low_stock</code> / <code>low_threshold</code>. Column names are flexible — you'll map them below.
       </div>
 
       <div class="upload-zone" id="drop-zone" onclick="document.getElementById('csv-file').click()">
@@ -1215,12 +1246,15 @@ let csvRows = [];
 let csvHeaders = [];
 let currentStore = localStorage.getItem('currentStore') || 'main'; // 'main' or 'branch'
 let pickerTab = 'all'; // 'all' or 'alert'
+let currentCatFilter  = ''; // inventory category filter
+let currentSubFilter  = ''; // inventory subcategory filter
+let orderSubCat       = ''; // order-page subcategory filter
 
 const STORE_NAMES = { main: 'Main Store', branch: 'Branch Store' };
 const STORE_DB_PATHS = { main: 'inventory', branch: 'inventory_branch' };
 
-const FIELDS = ['name', 'category', 'cost', 'inStock', 'lowStock'];
-const FIELD_LABELS = { name: 'Name', category: 'Category', cost: 'Cost', inStock: 'In Stock', lowStock: 'Low Stock' };
+const FIELDS = ['name', 'category', 'subcategory', 'cost', 'inStock', 'lowStock'];
+const FIELD_LABELS = { name: 'Name', category: 'Category', subcategory: 'Subcategory', cost: 'Cost', inStock: 'In Stock', lowStock: 'Low Stock' };
 
 // ═══════════════════════════════════════════════════════
 // FIREBASE INIT — Realtime Database
@@ -1461,6 +1495,7 @@ function setView(v) {
 
   if (v === 'order') {
     refreshOrderCats();
+    refreshOrderSubcats();
     renderPicker();
     renderOrderSummary();
     renderTgPanel();
@@ -1516,6 +1551,52 @@ function updateCategorySelect() {
   const val = sel.value;
   sel.innerHTML = '<option value="">— Select —</option>' + cats.map(c => `<option>${c}</option>`).join('');
   sel.value = val;
+  // Refresh inventory category filter
+  updateInvCatSelects();
+}
+
+// Rebuild inventory category + subcategory dropdowns
+function updateInvCatSelects() {
+  const cats = [...new Set(items.map(i => i.category).filter(Boolean))].sort();
+  const catSel = document.getElementById('inv-cat');
+  if (!catSel) return;
+  const curCat = catSel.value;
+  catSel.innerHTML = '<option value="">All Categories</option>' + cats.map(c => `<option ${c===curCat?'selected':''}>${esc(c)}</option>`).join('');
+  // cascade: rebuild subcategory options based on current inv-cat selection
+  updateInvSubcatSelect();
+}
+
+function updateInvSubcatSelect() {
+  const catVal = document.getElementById('inv-cat')?.value || '';
+  const pool = catVal ? items.filter(i => i.category === catVal) : items;
+  const subs = [...new Set(pool.map(i => i.subcategory).filter(Boolean))].sort();
+  const subSel = document.getElementById('inv-subcat');
+  if (!subSel) return;
+  const cur = subSel.value;
+  subSel.innerHTML = '<option value="">All Subcategories</option>' + subs.map(s => `<option ${s===cur?'selected':''}>${esc(s)}</option>`).join('');
+  if (!subs.includes(cur)) { subSel.value = ''; currentSubFilter = ''; }
+}
+
+// Modal subcategory populate based on chosen category
+function updateModalSubcats(selectVal = '') {
+  const cat = document.getElementById('f-newcat').value.trim() || document.getElementById('f-category').value;
+  const pool = cat ? items.filter(i => i.category === cat) : items;
+  const subs = [...new Set(pool.map(i => i.subcategory).filter(Boolean))].sort();
+  const sel = document.getElementById('f-subcategory');
+  sel.innerHTML = '<option value="">— None —</option>' + subs.map(s => `<option ${s===selectVal?'selected':''}>${esc(s)}</option>`).join('');
+  if (selectVal) sel.value = selectVal;
+}
+
+// Inventory filter setters
+function setInvCat(val) {
+  currentCatFilter = val;
+  currentSubFilter = '';
+  updateInvSubcatSelect();
+  renderTable();
+}
+function setInvSubcat(val) {
+  currentSubFilter = val;
+  renderTable();
 }
 
 function getStockClass(item) {
@@ -1533,10 +1614,12 @@ function getStockLabel(item) {
 function renderTable() {
   const q = document.getElementById('search').value.toLowerCase();
   let filtered = items.filter(i => {
-    const match = !q || i.name?.toLowerCase().includes(q) || i.category?.toLowerCase().includes(q);
+    const match = !q || i.name?.toLowerCase().includes(q) || i.category?.toLowerCase().includes(q) || i.subcategory?.toLowerCase().includes(q);
     if (!match) return false;
-    if (currentFilter === 'in-stock') return getStockClass(i) === 'in-stock';
-    if (currentFilter === 'attention') return getStockClass(i) === 'low-stock' || getStockClass(i) === 'out-stock';
+    if (currentFilter === 'in-stock') { if (getStockClass(i) !== 'in-stock') return false; }
+    if (currentFilter === 'attention') { const sc = getStockClass(i); if (sc !== 'low-stock' && sc !== 'out-stock') return false; }
+    if (currentCatFilter && i.category !== currentCatFilter) return false;
+    if (currentSubFilter && i.subcategory !== currentSubFilter) return false;
     return true;
   });
 
@@ -1561,9 +1644,10 @@ function renderTable() {
   tbody.innerHTML = filtered.map(item => {
     const sc = getStockClass(item);
     const sl = getStockLabel(item);
+    const subcatBadge = item.subcategory ? `<span class="subcat-badge">${esc(item.subcategory)}</span>` : '';
     return `<div class="table-row" onclick="openEditModal('${item.id}')">
       <div><div class="item-name">${esc(item.name || '')}</div></div>
-      <div><span class="category-badge">${esc(item.category || '—')}</span></div>
+      <div><div class="cat-subcat-wrap"><span class="category-badge">${esc(item.category || '—')}</span>${subcatBadge}</div></div>
       <div class="cost">${item.cost != null ? formatPeso(item.cost) : '—'}</div>
       <div onclick="event.stopPropagation()"><div class="stock-wrap ${sc}"><div class="stock-dot"></div><input class="inline-stock-input" type="number" min="0" value="${item.inStock ?? 0}" onchange="quickUpdateStock('${item.id}', this.value)" onfocus="this.select()" style="width:52px;font-weight:600;font-size:13px;border:1px solid var(--border);border-radius:4px;padding:2px 5px;background:var(--surface);font-family:inherit;outline:none;cursor:text;" /><span style="font-size:11px;color:var(--text3);margin-left:2px">${sl}</span></div></div>
       <div class="row-actions" onclick="event.stopPropagation()">
@@ -1587,8 +1671,9 @@ function openAddModal() {
   editingId = null;
   document.getElementById('modal-title').textContent = 'Add Item';
   document.getElementById('save-btn').textContent = 'Save Item';
-  ['f-name','f-cost','f-instock','f-lowstock','f-newcat'].forEach(id => document.getElementById(id).value = '');
+  ['f-name','f-cost','f-instock','f-lowstock','f-newcat','f-newsubcat'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('f-category').value = '';
+  document.getElementById('f-subcategory').innerHTML = '<option value="">— None —</option>';
   openModal('item-modal');
 }
 
@@ -1601,6 +1686,8 @@ function openEditModal(id) {
   document.getElementById('f-name').value = item.name || '';
   document.getElementById('f-category').value = item.category || '';
   document.getElementById('f-newcat').value = '';
+  updateModalSubcats(item.subcategory || '');
+  document.getElementById('f-newsubcat').value = '';
   document.getElementById('f-cost').value = item.cost ?? '';
   document.getElementById('f-instock').value = item.inStock ?? '';
   document.getElementById('f-lowstock').value = item.lowStock ?? '';
@@ -1611,9 +1698,11 @@ async function saveItem() {
   const name = document.getElementById('f-name').value.trim();
   if (!name) { showToast("Name is required", "error"); return; }
   const cat = document.getElementById('f-newcat').value.trim() || document.getElementById('f-category').value;
+  const subcat = document.getElementById('f-newsubcat').value.trim() || document.getElementById('f-subcategory').value;
   const item = {
     name,
     category: cat,
+    subcategory: subcat,
     cost: parseFloat(document.getElementById('f-cost').value) || 0,
     inStock: parseInt(document.getElementById('f-instock').value) || 0,
     lowStock: parseInt(document.getElementById('f-lowstock').value) || 0,
@@ -1637,7 +1726,7 @@ async function saveItem() {
     item.createdAt = Date.now();
     if (useFirebase) {
       const ref = db.ref(STORE_DB_PATHS[currentStore]).push();
-      await ref.set({ name: item.name, category: item.category, cost: item.cost,
+      await ref.set({ name: item.name, category: item.category, subcategory: item.subcategory, cost: item.cost,
                       inStock: item.inStock, lowStock: item.lowStock, createdAt: item.createdAt, updatedAt: item.updatedAt })
         .catch(e => { showToast("Save failed: " + e.message, "error"); return; });
       // Firebase listener will update items[] automatically
@@ -1712,6 +1801,7 @@ function parseCSV(text) {
   const hints = {
     name: ['name','item','product','title','description'],
     category: ['category','cat','type','group','dept'],
+    subcategory: ['subcategory','subcat','sub_category','sub','division'],
     cost: ['cost','price','rate','amount','value'],
     inStock: ['in_stock','instock','quantity','qty','stock','available','on_hand'],
     lowStock: ['low_stock','lowstock','low_threshold','threshold','reorder','min']
@@ -1752,6 +1842,7 @@ async function importCSV() {
     return {
       name: get(nameCol),
       category: get(getCol('category')),
+      subcategory: get(getCol('subcategory')),
       cost: parseFloat(get(getCol('cost'))) || 0,
       inStock: parseInt(get(getCol('inStock'))) || 0,
       lowStock: parseInt(get(getCol('lowStock'))) || 0,
@@ -1828,8 +1919,8 @@ async function importCSV() {
 // EXPORT
 // ═══════════════════════════════════════════════════════
 function exportCSV() {
-  const headers = ['name','category','cost','in_stock','low_stock'];
-  const rows = items.map(i => [i.name, i.category, i.cost, i.inStock, i.lowStock].map(v => `"${String(v??'').replace(/"/g,'""')}"`));
+  const headers = ['name','category','subcategory','cost','in_stock','low_stock'];
+  const rows = items.map(i => [i.name, i.category, i.subcategory||'', i.cost, i.inStock, i.lowStock].map(v => `"${String(v??'').replace(/"/g,'""')}"`));
   const csv = [headers.join(','), ...rows.map(r=>r.join(','))].join('\n');
   const a = document.createElement('a');
   a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
@@ -1900,14 +1991,16 @@ function getOrderTotal() {
 // ── Render the item picker list ──
 function renderPicker() {
   const q = (document.getElementById('order-search')?.value || '').toLowerCase();
-  const cat = document.getElementById('order-cat')?.value || '';
+  const cat    = document.getElementById('order-cat')?.value    || '';
+  const subcat = document.getElementById('order-subcat')?.value || '';
 
   let filtered = items.filter(i => {
     const sc = getStockClass(i);
     const alertOnly = pickerTab === 'alert' ? (sc === 'low-stock' || sc === 'out-stock') : true;
-    const matchQ = !q || i.name?.toLowerCase().includes(q) || i.category?.toLowerCase().includes(q);
+    const matchQ = !q || i.name?.toLowerCase().includes(q) || i.category?.toLowerCase().includes(q) || i.subcategory?.toLowerCase().includes(q);
     const matchC = !cat || i.category === cat;
-    return alertOnly && matchQ && matchC;
+    const matchS = !subcat || i.subcategory === subcat;
+    return alertOnly && matchQ && matchC && matchS;
   }).sort((a,b) => (a.name||'').localeCompare(b.name||''));
 
   const body = document.getElementById('picker-body');
@@ -1922,10 +2015,11 @@ function renderPicker() {
   body.innerHTML = filtered.map(item => {
     const qty = orderCart[item.id] || 0;
     const sc = getStockClass(item);
+    const subcatLine = item.subcategory ? ` · <span style="color:var(--accent);font-weight:500">${esc(item.subcategory)}</span>` : '';
     return `<div class="picker-row">
       <div>
         <div class="item-name">${esc(item.name)}</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:1px">${esc(item.category||'—')}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:1px">${esc(item.category||'—')}${subcatLine}</div>
       </div>
       <div class="cost" style="font-size:13px">${item.cost != null ? formatPeso(item.cost) : '—'}</div>
       <div><div class="stock-wrap ${sc}"><div class="stock-dot"></div><span class="stock-val" style="font-size:12px">${item.inStock ?? '—'}</span></div></div>
@@ -2040,6 +2134,7 @@ function setPickerTab(tab) {
     alertBtn.style.color = tab === 'alert' ? 'white' : 'var(--text2)';
   }
   refreshOrderCats();
+  refreshOrderSubcats();
   renderPicker();
 }
 
@@ -2053,6 +2148,28 @@ function refreshOrderCats() {
   if (!sel) return;
   const cur = sel.value;
   sel.innerHTML = '<option value="">All Categories</option>' + cats.map(cat => `<option ${cat===cur?'selected':''}>${esc(cat)}</option>`).join('');
+  refreshOrderSubcats();
+}
+
+// ── Cascade: rebuild order subcategory dropdown ──
+function refreshOrderSubcats() {
+  const catVal = document.getElementById('order-cat')?.value || '';
+  const base = pickerTab === 'alert'
+    ? items.filter(i => getStockClass(i) === 'low-stock' || getStockClass(i) === 'out-stock')
+    : items;
+  const pool = catVal ? base.filter(i => i.category === catVal) : base;
+  const subs = [...new Set(pool.map(i => i.subcategory).filter(Boolean))].sort();
+  const subSel = document.getElementById('order-subcat');
+  if (!subSel) return;
+  const cur = subSel.value;
+  subSel.innerHTML = '<option value="">All Subcategories</option>' + subs.map(s => `<option ${s===cur?'selected':''}>${esc(s)}</option>`).join('');
+  if (!subs.includes(cur)) subSel.value = '';
+}
+
+// ── When order-cat changes, cascade and re-render ──
+function onOrderCatChange() {
+  refreshOrderSubcats();
+  renderPicker();
 }
 
 // ═══════════════════════════════════════════════════════
