@@ -1156,6 +1156,16 @@
           <label>Low Stock Threshold</label>
           <input id="f-lowstock" type="number" min="0" placeholder="e.g. 10 — alert when below this">
         </div>
+        <div class="form-grid two">
+          <div class="field">
+            <label>Unit Name</label>
+            <input id="f-unitname" placeholder="e.g. box, case, pack">
+          </div>
+          <div class="field">
+            <label>Pcs per Unit</label>
+            <input id="f-unitqty" type="number" min="1" placeholder="e.g. 500">
+          </div>
+        </div>
       </div>
     </div>
     <div class="modal-footer">
@@ -1671,7 +1681,7 @@ function openAddModal() {
   editingId = null;
   document.getElementById('modal-title').textContent = 'Add Item';
   document.getElementById('save-btn').textContent = 'Save Item';
-  ['f-name','f-cost','f-instock','f-lowstock','f-newcat','f-newsubcat'].forEach(id => document.getElementById(id).value = '');
+  ['f-name','f-cost','f-instock','f-lowstock','f-newcat','f-newsubcat','f-unitname','f-unitqty'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('f-category').value = '';
   document.getElementById('f-subcategory').innerHTML = '<option value="">— None —</option>';
   openModal('item-modal');
@@ -1691,6 +1701,8 @@ function openEditModal(id) {
   document.getElementById('f-cost').value = item.cost ?? '';
   document.getElementById('f-instock').value = item.inStock ?? '';
   document.getElementById('f-lowstock').value = item.lowStock ?? '';
+  document.getElementById('f-unitname').value = item.unitName || '';
+  document.getElementById('f-unitqty').value = item.unitQty ?? '';
   openModal('item-modal');
 }
 
@@ -1706,6 +1718,8 @@ async function saveItem() {
     cost: parseFloat(document.getElementById('f-cost').value) || 0,
     inStock: parseInt(document.getElementById('f-instock').value) || 0,
     lowStock: parseInt(document.getElementById('f-lowstock').value) || 0,
+    unitName: document.getElementById('f-unitname').value.trim(),
+    unitQty: parseInt(document.getElementById('f-unitqty').value) || 0,
     updatedAt: Date.now()
   };
 
@@ -1727,7 +1741,8 @@ async function saveItem() {
     if (useFirebase) {
       const ref = db.ref(STORE_DB_PATHS[currentStore]).push();
       await ref.set({ name: item.name, category: item.category, subcategory: item.subcategory, cost: item.cost,
-                      inStock: item.inStock, lowStock: item.lowStock, createdAt: item.createdAt, updatedAt: item.updatedAt })
+                      inStock: item.inStock, lowStock: item.lowStock, unitName: item.unitName, unitQty: item.unitQty,
+                      createdAt: item.createdAt, updatedAt: item.updatedAt })
         .catch(e => { showToast("Save failed: " + e.message, "error"); return; });
       // Firebase listener will update items[] automatically
     } else {
@@ -2069,7 +2084,12 @@ function renderOrderSummary() {
   }
   emptyEl.style.display = 'none';
   linesEl.style.display = 'block';
-  linesEl.innerHTML = lines.map(i => `
+  linesEl.innerHTML = lines.map(i => {
+    const unitDisplay = getUnitDisplay(i.qty, i);
+    const unitBadge = unitDisplay
+      ? `<span style="font-size:10px;font-weight:700;color:var(--green);background:var(--green-light);border-radius:20px;padding:1px 7px;white-space:nowrap;flex-shrink:0;">→ ${esc(unitDisplay)}</span>`
+      : '';
+    return `
     <div class="order-item-row">
       <div class="order-item-summary" style="gap:8px;align-items:center;">
         <div onclick="event.stopPropagation()" style="display:flex;align-items:center;gap:4px;flex-shrink:0;">
@@ -2080,13 +2100,15 @@ function renderOrderSummary() {
             onfocus="this.select()">
           <button class="qty-btn" style="width:22px;height:22px;font-size:13px;" onclick="summaryChangeQty('${i.id}',1)">+</button>
         </div>
+        ${unitBadge}
         <span class="order-item-name">${esc(i.name)}</span>
         <button class="remove-line" onclick="event.stopPropagation();removeOrderLine('${i.id}')" title="Remove" style="margin-left:auto;">✕</button>
       </div>
       <div style="padding:0 0 7px 0;font-size:11px;color:var(--text3);">
-        ${i.qty} × ${formatPeso(i.cost||0)} = <strong style="color:var(--text)">${formatPeso(i.lineTotal)}</strong>
+        ${i.qty} pc(s) × ${formatPeso(i.cost||0)} = <strong style="color:var(--text)">${formatPeso(i.lineTotal)}</strong>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function removeOrderLine(id) {
@@ -2178,6 +2200,20 @@ function onOrderCatChange() {
 function formatPeso(amount) {
   const n = parseFloat(amount) || 0;
   return '₱' + n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// ═══════════════════════════════════════════════════════
+// UNIT CONVERSION HELPER
+// ═══════════════════════════════════════════════════════
+// Returns a display string like "1 box" or "1 box + 50 pc(s)" or null if no conversion set
+function getUnitDisplay(qty, item) {
+  if (!item.unitQty || item.unitQty <= 0 || !qty) return null;
+  const unitName = item.unitName || 'unit';
+  const whole = Math.floor(qty / item.unitQty);
+  const rem = qty % item.unitQty;
+  if (whole === 0) return null; // less than one full unit — don't show conversion
+  if (rem === 0) return `${whole} ${unitName}`;
+  return `${whole} ${unitName} + ${rem} pc(s)`;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2304,9 +2340,13 @@ async function sendTelegram() {
   const lines = getOrderItems();
   if (!lines.length) return showToast("Order is empty", "error");
 
-  // Message: only pieces + item name
+  // Message: converted unit (if set) + item name
   const now = new Date().toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
-  const lineItems = lines.map(i => `${i.qty}pc(s) - ${i.name}`).join('\n');
+  const lineItems = lines.map(i => {
+    const unitDisplay = getUnitDisplay(i.qty, i);
+    const qtyStr = unitDisplay ? unitDisplay : `${i.qty}pc(s)`;
+    return `${qtyStr} - ${i.name}`;
+  }).join('\n');
   const storeName = STORE_NAMES[currentStore].toUpperCase();
   const msg = `🛒 *Order List — ${storeName}*\n📅 ${now}\n─────────────────\n${lineItems}`;
 
