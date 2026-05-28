@@ -974,6 +974,12 @@
             </svg>
             Export
           </button>
+          <button class="btn btn-ghost btn-sm" onclick="openClearDBModal()" style="color:var(--red);" title="Delete all items from database">
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M2 4h10M5 4V2.5h4V4M5.5 6.5v4M8.5 6.5v4M3 4l.7 7.5h6.6L11 4"/>
+            </svg>
+            Clear DB
+          </button>
         </div>
       </div>
 
@@ -1217,6 +1223,38 @@
           <path d="M7 2v7M4 6l3 3 3-3M2 11h10"/>
         </svg>
         Import
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- CLEAR DB MODAL -->
+<div class="overlay" id="cleardb-modal">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" style="color:var(--red)">Clear Database</div>
+        <div class="modal-sub" id="cleardb-sub">This will permanently delete all items.</div>
+      </div>
+      <button class="close-btn" onclick="closeModal('cleardb-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="config-note" style="border-color:var(--red);background:var(--red-light,#fff1f1);color:var(--red)">
+        ⚠️ <strong>This cannot be undone.</strong> All inventory items for the current store will be permanently removed from Firebase. Export a backup first if needed.
+      </div>
+      <div style="margin-top:16px;font-size:13px;color:var(--text2)">Type <strong>DELETE</strong> to confirm:</div>
+      <input id="cleardb-confirm-input" type="text" placeholder="DELETE"
+        style="margin-top:8px;width:100%;box-sizing:border-box;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;background:var(--bg);color:var(--text);outline:none;"
+        oninput="document.getElementById('cleardb-btn').disabled = this.value !== 'DELETE';">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('cleardb-modal')">Cancel</button>
+      <button class="btn btn-primary" id="cleardb-btn" onclick="clearDatabase()" disabled
+        style="background:var(--red);border-color:var(--red);">
+        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" style="width:13px;height:13px">
+          <path d="M2 4h10M5 4V2.5h4V4M5.5 6.5v4M8.5 6.5v4M3 4l.7 7.5h6.6L11 4"/>
+        </svg>
+        Delete All Items
       </button>
     </div>
   </div>
@@ -1771,6 +1809,25 @@ async function deleteItem(id) {
 
 function openModal(id) { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function openClearDBModal() {
+  const storeName = (typeof STORE_NAMES !== 'undefined' ? STORE_NAMES[currentStore] : currentStore).toUpperCase();
+  document.getElementById('cleardb-sub').textContent = `Permanently deletes all items from ${storeName}.`;
+  document.getElementById('cleardb-confirm-input').value = '';
+  document.getElementById('cleardb-btn').disabled = true;
+  document.getElementById('cleardb-modal').classList.add('open');
+}
+
+async function clearDatabase() {
+  const path = STORE_DB_PATHS[currentStore];
+  try {
+    await db.ref(path).remove();
+    closeModal('cleardb-modal');
+    showToast('Database cleared — ready for fresh import.', 'success');
+  } catch (e) {
+    showToast('Error clearing database: ' + e.message, 'error');
+  }
+}
 
 // ═══════════════════════════════════════════════════════
 // CSV IMPORT
