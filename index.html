@@ -917,7 +917,7 @@
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
           <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L13 13"/>
         </svg>
-        <input class="search-input" id="search" placeholder="Search items…" oninput="renderTable()">
+        <input class="search-input" id="search" placeholder="Search items… (use * as wildcard)" oninput="renderTable()">
       </div>
       <button class="btn btn-primary" onclick="openAddModal()">
         <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2">
@@ -1659,10 +1659,23 @@ function getStockLabel(item) {
   return 'OK';
 }
 
+// Multi-token wildcard search: each space-separated token must match somewhere in name/category/subcategory
+function wildcardMatch(raw, item) {
+  if (!raw) return true;
+  const tokens = raw.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const haystack = [item.name, item.category, item.subcategory].filter(Boolean).join(' ').toLowerCase();
+  return tokens.every(t => {
+    if (!t.includes('*')) return haystack.includes(t);
+    // Convert wildcard token to regex: escape special chars, then replace * with .*
+    const pattern = t.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+    return new RegExp(pattern).test(haystack);
+  });
+}
+
 function renderTable() {
-  const q = document.getElementById('search').value.toLowerCase();
+  const q = document.getElementById('search').value;
   let filtered = items.filter(i => {
-    const match = !q || i.name?.toLowerCase().includes(q) || i.category?.toLowerCase().includes(q) || i.subcategory?.toLowerCase().includes(q);
+    const match = wildcardMatch(q, i);
     if (!match) return false;
     if (currentFilter === 'in-stock') { if (getStockClass(i) !== 'in-stock') return false; }
     if (currentFilter === 'attention') { const sc = getStockClass(i); if (sc !== 'low-stock' && sc !== 'out-stock') return false; }
@@ -2069,7 +2082,7 @@ function renderPicker() {
   let filtered = items.filter(i => {
     const sc = getStockClass(i);
     const alertOnly = pickerTab === 'alert' ? (sc === 'low-stock' || sc === 'out-stock') : true;
-    const matchQ = !q || i.name?.toLowerCase().includes(q) || i.category?.toLowerCase().includes(q) || i.subcategory?.toLowerCase().includes(q);
+    const matchQ = wildcardMatch(q, i);
     const matchC = !cat || i.category === cat;
     const matchS = !subcat || i.subcategory === subcat;
     return alertOnly && matchQ && matchC && matchS;
