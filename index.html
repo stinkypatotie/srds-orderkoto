@@ -2079,7 +2079,12 @@ function exportCSV() {
 // LOYVERSE SYNC — pull stock levels from Loyverse POS
 // ═══════════════════════════════════════════════════════
 const LOYVERSE_SETTINGS_PATH = 'loyverse_settings';
-const LOYVERSE_API = 'https://stockrloyvers.jhudielvendivil.workers.dev/v1';
+// ═══════════════════════════════════════════════════════
+// LOYVERSE PROXY — Loyverse's API blocks direct browser calls (CORS),
+// so this goes through a Cloudflare Worker instead. Deploy the worker
+// (see loyverse-proxy-worker.js) and paste its *.workers.dev URL below.
+// ═══════════════════════════════════════════════════════
+const LOYVERSE_API = 'https://loyverse-proxy.YOUR-SUBDOMAIN.workers.dev/v1';
 let lvStoresLoaded = false;
 
 async function loadLoyverseSettings() {
@@ -2171,11 +2176,16 @@ async function lvLoadStores() {
   if (!s.token) return;
   const mainSel = document.getElementById('lv-store-main');
   const branchSel = document.getElementById('lv-store-branch');
+  const log = document.getElementById('lv-sync-log');
   try {
     const res = await fetch(`${LOYVERSE_API}/stores`, { headers: { Authorization: `Bearer ${s.token}` } });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
+    const raw = await res.text();
+    console.log('Loyverse /stores status:', res.status, 'body:', raw);
+    if (!res.ok) throw new Error('HTTP ' + res.status + ' — ' + raw.slice(0, 200));
+    let data;
+    try { data = JSON.parse(raw); } catch(e) { throw new Error('Response was not valid JSON: ' + raw.slice(0, 200)); }
     const stores = data.stores || [];
+    if (!stores.length) throw new Error('No stores in response. Raw: ' + raw.slice(0, 200));
     const opts = '<option value="">— Select store —</option>' +
       stores.map(st => `<option value="${esc(st.id)}">${esc(st.name)}</option>`).join('');
     mainSel.innerHTML = opts;
@@ -2183,12 +2193,12 @@ async function lvLoadStores() {
     mainSel.value = (s.storeMap && s.storeMap.main) || '';
     branchSel.value = (s.storeMap && s.storeMap.branch) || '';
     lvStoresLoaded = true;
+    log.textContent = `Loaded ${stores.length} store(s) from Loyverse.`;
   } catch(e) {
     console.error('Loyverse stores error:', e);
-    mainSel.innerHTML = '<option value="">Failed to load — check token</option>';
-    branchSel.innerHTML = '<option value="">Failed to load — check token</option>';
-    document.getElementById('lv-sync-log').textContent =
-      "Couldn't reach Loyverse from the browser. This is usually a CORS block — the Loyverse API is built for server-to-server calls, so a small proxy (e.g. a Firebase Cloud Function) may be needed instead of calling it directly from this page.";
+    mainSel.innerHTML = '<option value="">Failed to load — see log below</option>';
+    branchSel.innerHTML = '<option value="">Failed to load — see log below</option>';
+    log.textContent = 'Error loading stores: ' + (e.message || e);
   }
 }
 
