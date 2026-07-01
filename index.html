@@ -968,6 +968,12 @@
             </svg>
             Import CSV
           </button>
+          <button class="btn btn-ghost btn-sm" onclick="openLoyverseModal()">
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M7 1v5l3 2M7 1a6 6 0 1 0 6 6"/>
+            </svg>
+            Sync Loyverse
+          </button>
           <button class="btn btn-ghost btn-sm" onclick="exportCSV()">
             <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
               <path d="M7 2v7M4 6l3 3 3-3M2 11h10"/>
@@ -1228,6 +1234,58 @@
   </div>
 </div>
 
+<!-- LOYVERSE SYNC MODAL -->
+<div class="overlay" id="loyverse-modal">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">Loyverse Sync</div>
+        <div class="modal-sub">Pull stock levels from your Loyverse POS</div>
+      </div>
+      <button class="close-btn" onclick="closeModal('loyverse-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="config-note">
+        <strong>💡 How it works</strong>
+        Matches Loyverse items to Stockr items by exact name (case-insensitive) and updates In Stock for the current store (<span id="lv-current-store-label">MAIN</span> STORE). Items with no name match are left untouched — this app has no SKU field yet, so naming needs to line up between the two systems.
+      </div>
+
+      <!-- Token -->
+      <div style="margin-bottom:14px;">
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:var(--text3);margin-bottom:4px;">Access Token</div>
+        <input id="lv-token-input" type="password" placeholder="Paste your Loyverse access token…" autocomplete="off" style="margin-bottom:4px;">
+        <button id="lv-save-token-btn" onclick="lvSaveToken()" style="width:100%;padding:6px;background:var(--accent);color:white;border:none;border-radius:6px;font-family:inherit;font-size:11px;font-weight:600;cursor:pointer;">💾 Save Token</button>
+        <div id="lv-token-saved" style="display:none;align-items:center;justify-content:space-between;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 8px;gap:6px;">
+          <span id="lv-token-mask" style="font-size:11px;font-family:monospace;color:var(--text2);flex:1;word-break:break-all;"></span>
+          <button onclick="lvClearToken()" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:11px;padding:0 2px;white-space:nowrap;">✕ Remove</button>
+        </div>
+        <div style="font-size:10px;color:var(--text3);margin-top:4px;">Stored in Firebase, gated behind your login — same as the Telegram bot token. Never saved into this HTML file.</div>
+      </div>
+
+      <!-- Store mapping -->
+      <div id="lv-store-section" style="display:none;margin-bottom:6px;">
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:var(--text3);margin-bottom:4px;">Store Mapping</div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <div>
+            <div style="font-size:11px;color:var(--text2);margin-bottom:2px;">Loyverse store → MAIN</div>
+            <select id="lv-store-main" onchange="lvSaveStoreMap()" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:12px;background:var(--surface);color:var(--text);"><option value="">Loading…</option></select>
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--text2);margin-bottom:2px;">Loyverse store → BRANCH</div>
+            <select id="lv-store-branch" onchange="lvSaveStoreMap()" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:12px;background:var(--surface);color:var(--text);"><option value="">Loading…</option></select>
+          </div>
+        </div>
+      </div>
+
+      <div id="lv-sync-log" style="font-size:11px;color:var(--text3);margin-top:10px;white-space:pre-wrap;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('loyverse-modal')">Close</button>
+      <button class="btn btn-primary" id="lv-sync-btn" onclick="lvSyncNow()" style="display:none">🔄 Sync Stock Now</button>
+    </div>
+  </div>
+</div>
+
 <!-- CLEAR DB MODAL -->
 <div class="overlay" id="cleardb-modal">
   <div class="modal" style="max-width:400px">
@@ -1481,6 +1539,9 @@ function updateStoreUI() {
   if (lbl) lbl.textContent = STORE_NAMES[currentStore].toUpperCase();
   // Topbar subtle indicator
   document.title = 'Stockr — ' + STORE_NAMES[currentStore];
+  // Loyverse modal store label (if open)
+  const lvLbl = document.getElementById('lv-current-store-label');
+  if (lvLbl) lvLbl.textContent = STORE_NAMES[currentStore].toUpperCase();
 }
 
 async function saveToFirebase(item) {
@@ -2012,6 +2073,212 @@ function exportCSV() {
   a.download = 'inventory.csv';
   a.click();
   showToast("CSV exported");
+}
+
+// ═══════════════════════════════════════════════════════
+// LOYVERSE SYNC — pull stock levels from Loyverse POS
+// ═══════════════════════════════════════════════════════
+const LOYVERSE_SETTINGS_PATH = 'loyverse_settings';
+const LOYVERSE_API = 'https://stockrloyvers.jhudielvendivil.workers.dev/v1';
+let lvStoresLoaded = false;
+
+async function loadLoyverseSettings() {
+  if (useFirebase && firebase.auth().currentUser) {
+    try {
+      const snap = await db.ref(LOYVERSE_SETTINGS_PATH).once('value');
+      const val = snap.val();
+      if (val) {
+        localStorage.setItem('loyverse_settings', JSON.stringify(val));
+        return val;
+      }
+    } catch(e) { /* fall through to localStorage */ }
+  }
+  const raw = localStorage.getItem('loyverse_settings');
+  return raw ? JSON.parse(raw) : { token: '', storeMap: {} };
+}
+
+async function saveLoyverseSettings(s) {
+  localStorage.setItem('loyverse_settings', JSON.stringify(s));
+  if (useFirebase && firebase.auth().currentUser) {
+    try {
+      await db.ref(LOYVERSE_SETTINGS_PATH).set(s);
+      return true;
+    } catch(e) {
+      showToast('Firebase permission denied — add loyverse_settings rules', 'error');
+      return false;
+    }
+  }
+  return true;
+}
+
+function openLoyverseModal() {
+  openModal('loyverse-modal');
+  renderLoyversePanel();
+}
+
+async function renderLoyversePanel() {
+  const s = await loadLoyverseSettings();
+
+  const lbl = document.getElementById('lv-current-store-label');
+  if (lbl) lbl.textContent = STORE_NAMES[currentStore].toUpperCase();
+
+  const tokenInput = document.getElementById('lv-token-input');
+  const tokenSaved = document.getElementById('lv-token-saved');
+  const tokenMask  = document.getElementById('lv-token-mask');
+
+  if (s.token) {
+    tokenInput.style.display = 'none';
+    document.getElementById('lv-save-token-btn').style.display = 'none';
+    tokenSaved.style.display = 'flex';
+    tokenMask.textContent = s.token.substring(0, 6) + '••••••••' + s.token.slice(-4);
+    document.getElementById('lv-store-section').style.display = 'block';
+    document.getElementById('lv-sync-btn').style.display = 'block';
+    if (!lvStoresLoaded) lvLoadStores();
+  } else {
+    tokenInput.style.display = 'block';
+    document.getElementById('lv-save-token-btn').style.display = 'block';
+    tokenSaved.style.display = 'none';
+    document.getElementById('lv-store-section').style.display = 'none';
+    document.getElementById('lv-sync-btn').style.display = 'none';
+  }
+}
+
+async function lvSaveToken() {
+  const val = document.getElementById('lv-token-input').value.trim();
+  if (!val) return showToast("Enter an access token", "error");
+  const s = await loadLoyverseSettings();
+  s.token = val;
+  const ok = await saveLoyverseSettings(s);
+  if (!ok) return;
+  document.getElementById('lv-token-input').value = '';
+  lvStoresLoaded = false;
+  await renderLoyversePanel();
+  showToast("Loyverse token saved ✓", "success");
+}
+
+async function lvClearToken() {
+  if (!confirm("Remove saved Loyverse token?")) return;
+  const s = await loadLoyverseSettings();
+  s.token = '';
+  const ok = await saveLoyverseSettings(s);
+  if (!ok) return;
+  lvStoresLoaded = false;
+  await renderLoyversePanel();
+}
+
+async function lvLoadStores() {
+  const s = await loadLoyverseSettings();
+  if (!s.token) return;
+  const mainSel = document.getElementById('lv-store-main');
+  const branchSel = document.getElementById('lv-store-branch');
+  try {
+    const res = await fetch(`${LOYVERSE_API}/stores`, { headers: { Authorization: `Bearer ${s.token}` } });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const stores = data.stores || [];
+    const opts = '<option value="">— Select store —</option>' +
+      stores.map(st => `<option value="${esc(st.id)}">${esc(st.name)}</option>`).join('');
+    mainSel.innerHTML = opts;
+    branchSel.innerHTML = opts;
+    mainSel.value = (s.storeMap && s.storeMap.main) || '';
+    branchSel.value = (s.storeMap && s.storeMap.branch) || '';
+    lvStoresLoaded = true;
+  } catch(e) {
+    console.error('Loyverse stores error:', e);
+    mainSel.innerHTML = '<option value="">Failed to load — check token</option>';
+    branchSel.innerHTML = '<option value="">Failed to load — check token</option>';
+    document.getElementById('lv-sync-log').textContent =
+      "Couldn't reach Loyverse from the browser. This is usually a CORS block — the Loyverse API is built for server-to-server calls, so a small proxy (e.g. a Firebase Cloud Function) may be needed instead of calling it directly from this page.";
+  }
+}
+
+async function lvSaveStoreMap() {
+  const s = await loadLoyverseSettings();
+  s.storeMap = {
+    main: document.getElementById('lv-store-main').value,
+    branch: document.getElementById('lv-store-branch').value
+  };
+  await saveLoyverseSettings(s);
+}
+
+// Fetch every page of a Loyverse list endpoint
+async function lvFetchAll(path, token, params = {}) {
+  let out = [];
+  let cursor = null;
+  do {
+    const qs = new URLSearchParams({ limit: 250, ...params, ...(cursor ? { cursor } : {}) });
+    const res = await fetch(`${LOYVERSE_API}/${path}?${qs}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) throw new Error('HTTP ' + res.status + ' on ' + path);
+    const data = await res.json();
+    const key = Object.keys(data).find(k => Array.isArray(data[k]));
+    out = out.concat(key ? data[key] : []);
+    cursor = data.cursor || null;
+  } while (cursor);
+  return out;
+}
+
+async function lvSyncNow() {
+  const s = await loadLoyverseSettings();
+  if (!s.token) return showToast("Save a Loyverse token first", "error");
+  const storeId = s.storeMap && s.storeMap[currentStore];
+  if (!storeId) return showToast(`Map a Loyverse store to ${STORE_NAMES[currentStore]} first`, "error");
+
+  const btn = document.getElementById('lv-sync-btn');
+  const log = document.getElementById('lv-sync-log');
+  btn.disabled = true;
+  btn.textContent = 'Syncing…';
+  log.textContent = '';
+
+  try {
+    const [loyItems, invLevels] = await Promise.all([
+      lvFetchAll('items', s.token),
+      lvFetchAll('inventory', s.token, { store_id: storeId })
+    ]);
+
+    // variant_id -> item name
+    const nameByVariant = {};
+    loyItems.forEach(it => (it.variants || []).forEach(v => { nameByVariant[v.variant_id] = it.item_name; }));
+
+    // normalized item name -> in_stock, for this store only
+    const stockByName = {};
+    invLevels.forEach(lvl => {
+      if (lvl.store_id !== storeId) return;
+      const name = nameByVariant[lvl.variant_id];
+      if (name) stockByName[name.trim().toLowerCase()] = Math.round(lvl.in_stock);
+    });
+
+    // Match against current Stockr items by name, batch-update Firebase
+    const updates = {};
+    let matched = 0;
+    items.forEach(item => {
+      const key = (item.name || '').trim().toLowerCase();
+      if (key in stockByName) {
+        const newQty = stockByName[key];
+        matched++;
+        if (newQty !== item.inStock) {
+          item.inStock = newQty;
+          updates[`${STORE_DB_PATHS[currentStore]}/${item.id}/inStock`] = newQty;
+        }
+      }
+    });
+
+    if (useFirebase && Object.keys(updates).length) {
+      await db.ref().update(updates);
+    } else if (!useFirebase) {
+      saveLocal();
+    }
+    updateUI();
+
+    log.textContent = `Matched ${matched} of ${items.length} Stockr item(s) by name. ${Object.keys(updates).length} stock value(s) changed.`;
+    showToast(`Loyverse sync complete — ${matched} matched ✓`, "success");
+  } catch(e) {
+    console.error('Loyverse sync error:', e);
+    log.textContent = 'Sync failed: ' + (e.message || e) + '. This is often a CORS block — Loyverse may require a small server-side proxy for browser-based calls rather than a direct fetch from this page.';
+    showToast("Loyverse sync failed — see log below", "error");
+  }
+
+  btn.disabled = false;
+  btn.textContent = '🔄 Sync Stock Now';
 }
 
 // ═══════════════════════════════════════════════════════
