@@ -2584,6 +2584,14 @@ function formatPeso(amount) {
   return '₱' + n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// pdf-lib's built-in fonts use WinAnsi encoding, which can't render the
+// ₱ symbol (U+20B1) — use this instead of formatPeso() anywhere text is
+// drawn into a PDF.
+function formatPesoPDF(amount) {
+  const n = parseFloat(amount) || 0;
+  return 'P ' + n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 // ═══════════════════════════════════════════════════════
 // UNIT CONVERSION HELPER
 // ═══════════════════════════════════════════════════════
@@ -2820,8 +2828,8 @@ async function downloadOrderPDF() {
       const name = item.name.length > 40 ? item.name.slice(0, 37) + '…' : item.name;
       page.drawText(name, { x: colName, y, size: 10, font });
       page.drawText(qtyStr, { x: colQty, y, size: 10, font });
-      page.drawText(formatPeso(item.cost || 0), { x: colCost, y, size: 10, font });
-      page.drawText(formatPeso(item.lineTotal), { x: colTotal, y, size: 10, font });
+      page.drawText(formatPesoPDF(item.cost || 0), { x: colCost, y, size: 10, font });
+      page.drawText(formatPesoPDF(item.lineTotal), { x: colTotal, y, size: 10, font });
       y -= 18;
     });
 
@@ -2830,7 +2838,7 @@ async function downloadOrderPDF() {
     page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_W - MARGIN, y }, thickness: 1, color: rgb(0.85, 0.85, 0.85) });
     y -= 22;
     page.drawText('ORDER TOTAL', { x: colCost, y, size: 12, font: fontBold });
-    page.drawText(formatPeso(getOrderTotal()), { x: colTotal - 10, y, size: 12, font: fontBold, color: rgb(0.77, 0.38, 0.18) });
+    page.drawText(formatPesoPDF(getOrderTotal()), { x: colTotal - 10, y, size: 12, font: fontBold, color: rgb(0.77, 0.38, 0.18) });
 
     const pdfBytes = await pdfDoc.save();
     const blob = new Blob([pdfBytes], { type: 'application/pdf' });
