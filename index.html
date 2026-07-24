@@ -2807,9 +2807,9 @@ async function downloadOrderPDF() {
     // Table header
     const colName = MARGIN, colQty = PAGE_W - MARGIN - 200, colCost = PAGE_W - MARGIN - 130, colTotal = PAGE_W - MARGIN - 60;
     page.drawText('Item', { x: colName, y, size: 10, font: fontBold });
-    page.drawText('Qty', { x: colQty, y, size: 10, font: fontBold });
-    page.drawText('Cost', { x: colCost, y, size: 10, font: fontBold });
-    page.drawText('Total', { x: colTotal, y, size: 10, font: fontBold });
+    page.drawText('Qty', { x: colCost - 10 - fontBold.widthOfTextAtSize('Qty', 10), y, size: 10, font: fontBold });
+    page.drawText('Cost', { x: colTotal - 10 - fontBold.widthOfTextAtSize('Cost', 10), y, size: 10, font: fontBold });
+    page.drawText('Total', { x: PAGE_W - MARGIN - fontBold.widthOfTextAtSize('Total', 10), y, size: 10, font: fontBold });
     y -= 8;
     page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_W - MARGIN, y }, thickness: 0.75, color: rgb(0.85, 0.85, 0.85) });
     y -= 18;
@@ -2826,10 +2826,12 @@ async function downloadOrderPDF() {
       const unitDisplay = getUnitDisplay(item.qty, item);
       const qtyStr = unitDisplay ? unitDisplay : `${item.qty} pc(s)`;
       const name = item.name.length > 40 ? item.name.slice(0, 37) + '…' : item.name;
+      const costStr = formatPesoPDF(item.cost || 0);
+      const totalStr2 = formatPesoPDF(item.lineTotal);
       page.drawText(name, { x: colName, y, size: 10, font });
-      page.drawText(qtyStr, { x: colQty, y, size: 10, font });
-      page.drawText(formatPesoPDF(item.cost || 0), { x: colCost, y, size: 10, font });
-      page.drawText(formatPesoPDF(item.lineTotal), { x: colTotal, y, size: 10, font });
+      page.drawText(qtyStr, { x: colCost - 10 - font.widthOfTextAtSize(qtyStr, 10), y, size: 10, font });
+      page.drawText(costStr, { x: colTotal - 10 - font.widthOfTextAtSize(costStr, 10), y, size: 10, font });
+      page.drawText(totalStr2, { x: PAGE_W - MARGIN - font.widthOfTextAtSize(totalStr2, 10), y, size: 10, font });
       y -= 18;
     });
 
@@ -2837,8 +2839,10 @@ async function downloadOrderPDF() {
     y -= 6;
     page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_W - MARGIN, y }, thickness: 1, color: rgb(0.85, 0.85, 0.85) });
     y -= 22;
-    page.drawText('ORDER TOTAL', { x: colCost, y, size: 12, font: fontBold });
-    page.drawText(formatPesoPDF(getOrderTotal()), { x: colTotal - 10, y, size: 12, font: fontBold, color: rgb(0.77, 0.38, 0.18) });
+    page.drawText('ORDER TOTAL', { x: colQty, y, size: 12, font: fontBold });
+    const totalStr = formatPesoPDF(getOrderTotal());
+    const totalWidth = fontBold.widthOfTextAtSize(totalStr, 12);
+    page.drawText(totalStr, { x: PAGE_W - MARGIN - totalWidth, y, size: 12, font: fontBold, color: rgb(0.77, 0.38, 0.18) });
 
     const pdfBytes = await pdfDoc.save();
     const blob = new Blob([pdfBytes], { type: 'application/pdf' });
