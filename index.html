@@ -1114,6 +1114,12 @@
                 </svg>
                 Send via Telegram
               </button>
+              <button class="btn btn-ghost" id="btn-copy-order" onclick="copyOrderToClipboard()">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <rect x="4.5" y="4.5" width="8" height="8.5" rx="1"/><path d="M2.5 9.5V2a1 1 0 0 1 1-1H9"/>
+                </svg>
+                Copy Order
+              </button>
               <button class="btn btn-ghost" id="btn-download-pdf" onclick="downloadOrderPDF()">
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
                   <path d="M3 1.5h5l3 3v8H3z"/><path d="M8 1.5v3h3"/><path d="M5 8.5v2M7 7.5v3M9 9v1.5"/>
@@ -2730,34 +2736,44 @@ async function sendTelegram() {
   const lines = getOrderItems();
   if (!lines.length) return showToast("Order is empty", "error");
 
-  // Message: converted unit (if set) + item name
   const now = new Date().toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
-  const lineItems = lines.map(i => {
-    const unitDisplay = getUnitDisplay(i.qty, i);
-    const qtyStr = unitDisplay ? unitDisplay : `${i.qty}pc(s)`;
-    return `${qtyStr} - ${i.name}`;
-  }).join('\n');
   const storeName = STORE_NAMES[currentStore].toUpperCase();
-  const msg = `🛒 *Order List — ${storeName}*\n📅 ${now}\n─────────────────\n${lineItems}`;
+  // Short caption only — the itemized list lives in the attached PDF, so
+  // this never runs into Telegram's 4096-char text limit even for large orders.
+  const caption = `🛒 *Order List — ${storeName}*\n📅 ${now}\n${lines.length} item(s) · Total: ${formatPeso(getOrderTotal())}`;
 
   const btn = document.querySelector('.btn-telegram');
   btn.disabled = true;
   btn.textContent = 'Sending…';
 
   let ok = 0, errs = [];
-  for (const chatId of s.chatIds) {
-    try {
-      const res = await fetch(`https://api.telegram.org/bot${s.token}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: 'Markdown' })
-      });
-      const data = await res.json();
-      if (data.ok) ok++;
-      else errs.push(chatId + ': ' + (data.description || 'error'));
-    } catch(e) {
-      errs.push(chatId + ': network error');
+  try {
+    const pdfBytes = await buildOrderPDFBytes(lines);
+    const fileName = `order-${currentStore}-${new Date().toISOString().slice(0,10)}.pdf`;
+    const pdfBlob = new Blob([pdfBytes], { type: 'application/pdf' });
+
+    for (const chatId of s.chatIds) {
+      try {
+        const form = new FormData();
+        form.append('chat_id', chatId);
+        form.append('caption', caption);
+        form.append('parse_mode', 'Markdown');
+        form.append('document', pdfBlob, fileName);
+
+        const res = await fetch(`https://api.telegram.org/bot${s.token}/sendDocument`, {
+          method: 'POST',
+          body: form
+        });
+        const data = await res.json();
+        if (data.ok) ok++;
+        else errs.push(chatId + ': ' + (data.description || 'error'));
+      } catch(e) {
+        errs.push(chatId + ': network error');
+      }
     }
+  } catch(e) {
+    console.error('Order PDF build error:', e);
+    errs.push('PDF generation failed: ' + (e.message || e));
   }
 
   btn.disabled = false;
@@ -2781,70 +2797,7 @@ async function downloadOrderPDF() {
   btn.textContent = 'Generating…';
 
   try {
-    const { PDFDocument, StandardFonts, rgb } = PDFLib;
-    const pdfDoc = await PDFDocument.create();
-    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-
-    const PAGE_W = 595, PAGE_H = 842; // A4
-    const MARGIN = 44;
-    let page = pdfDoc.addPage([PAGE_W, PAGE_H]);
-    let y = PAGE_H - MARGIN;
-
-    const storeName = STORE_NAMES[currentStore].toUpperCase();
-    const now = new Date().toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
-
-    // Header
-    page.drawText('Stockr — Order List', { x: MARGIN, y, size: 18, font: fontBold, color: rgb(0.77, 0.38, 0.18) });
-    y -= 22;
-    page.drawText(`${storeName} STORE`, { x: MARGIN, y, size: 11, font: fontBold, color: rgb(0.4, 0.4, 0.4) });
-    y -= 15;
-    page.drawText(now, { x: MARGIN, y, size: 10, font, color: rgb(0.5, 0.5, 0.5) });
-    y -= 10;
-    page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_W - MARGIN, y }, thickness: 1, color: rgb(0.85, 0.85, 0.85) });
-    y -= 24;
-
-    // Table header
-    const colName = MARGIN, colQty = PAGE_W - MARGIN - 200, colCost = PAGE_W - MARGIN - 130, colTotal = PAGE_W - MARGIN - 60;
-    page.drawText('Item', { x: colName, y, size: 10, font: fontBold });
-    page.drawText('Qty', { x: colCost - 10 - fontBold.widthOfTextAtSize('Qty', 10), y, size: 10, font: fontBold });
-    page.drawText('Cost', { x: colTotal - 10 - fontBold.widthOfTextAtSize('Cost', 10), y, size: 10, font: fontBold });
-    page.drawText('Total', { x: PAGE_W - MARGIN - fontBold.widthOfTextAtSize('Total', 10), y, size: 10, font: fontBold });
-    y -= 8;
-    page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_W - MARGIN, y }, thickness: 0.75, color: rgb(0.85, 0.85, 0.85) });
-    y -= 18;
-
-    const addPageIfNeeded = () => {
-      if (y < MARGIN + 60) {
-        page = pdfDoc.addPage([PAGE_W, PAGE_H]);
-        y = PAGE_H - MARGIN;
-      }
-    };
-
-    lines.forEach(item => {
-      addPageIfNeeded();
-      const unitDisplay = getUnitDisplay(item.qty, item);
-      const qtyStr = unitDisplay ? unitDisplay : `${item.qty} pc(s)`;
-      const name = item.name.length > 40 ? item.name.slice(0, 37) + '…' : item.name;
-      const costStr = formatPesoPDF(item.cost || 0);
-      const totalStr2 = formatPesoPDF(item.lineTotal);
-      page.drawText(name, { x: colName, y, size: 10, font });
-      page.drawText(qtyStr, { x: colCost - 10 - font.widthOfTextAtSize(qtyStr, 10), y, size: 10, font });
-      page.drawText(costStr, { x: colTotal - 10 - font.widthOfTextAtSize(costStr, 10), y, size: 10, font });
-      page.drawText(totalStr2, { x: PAGE_W - MARGIN - font.widthOfTextAtSize(totalStr2, 10), y, size: 10, font });
-      y -= 18;
-    });
-
-    addPageIfNeeded();
-    y -= 6;
-    page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_W - MARGIN, y }, thickness: 1, color: rgb(0.85, 0.85, 0.85) });
-    y -= 22;
-    page.drawText('ORDER TOTAL', { x: colQty, y, size: 12, font: fontBold });
-    const totalStr = formatPesoPDF(getOrderTotal());
-    const totalWidth = fontBold.widthOfTextAtSize(totalStr, 12);
-    page.drawText(totalStr, { x: PAGE_W - MARGIN - totalWidth, y, size: 12, font: fontBold, color: rgb(0.77, 0.38, 0.18) });
-
-    const pdfBytes = await pdfDoc.save();
+    const pdfBytes = await buildOrderPDFBytes(lines);
     const blob = new Blob([pdfBytes], { type: 'application/pdf' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -2861,6 +2814,122 @@ async function downloadOrderPDF() {
 
   btn.disabled = false;
   btn.innerHTML = origLabel;
+}
+
+// Builds the order PDF and returns its raw bytes (Uint8Array) — shared by
+// the Download PDF button and the Telegram document upload, so both stay
+// in sync and there's only one place that draws the layout.
+// ═══════════════════════════════════════════════════════
+// COPY ORDER — plain text for pasting into Messenger, SMS, etc.
+// ═══════════════════════════════════════════════════════
+async function copyOrderToClipboard() {
+  const lines = getOrderItems();
+  if (!lines.length) return showToast("Order is empty", "error");
+
+  const now = new Date().toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
+  const storeName = STORE_NAMES[currentStore].toUpperCase();
+
+  const itemLines = lines.map(i => {
+    const unitDisplay = getUnitDisplay(i.qty, i);
+    const qtyStr = unitDisplay ? unitDisplay : `${i.qty} pc(s)`;
+    return `${qtyStr} - ${i.name}`;
+  }).join('\n');
+
+  const text = `ORDER LIST — ${storeName}\n${now}\n-----------------------------\n${itemLines}\n-----------------------------\nTOTAL: ${formatPeso(getOrderTotal())}`;
+
+  const btn = document.getElementById('btn-copy-order');
+  const origLabel = btn.innerHTML;
+
+  try {
+    await navigator.clipboard.writeText(text);
+    btn.textContent = '✓ Copied!';
+    showToast("Order copied — paste it anywhere", "success");
+  } catch(e) {
+    // Fallback for browsers/contexts that block the Clipboard API
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+      btn.textContent = '✓ Copied!';
+      showToast("Order copied — paste it anywhere", "success");
+    } catch(e2) {
+      showToast("Copy failed — select and copy manually", "error");
+    }
+    document.body.removeChild(ta);
+  }
+
+  setTimeout(() => { btn.innerHTML = origLabel; }, 1800);
+}
+
+async function buildOrderPDFBytes(lines) {
+  const { PDFDocument, StandardFonts, rgb } = PDFLib;
+  const pdfDoc = await PDFDocument.create();
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  const PAGE_W = 595, PAGE_H = 842; // A4
+  const MARGIN = 44;
+  let page = pdfDoc.addPage([PAGE_W, PAGE_H]);
+  let y = PAGE_H - MARGIN;
+
+  const storeName = STORE_NAMES[currentStore].toUpperCase();
+  const now = new Date().toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
+
+  // Header
+  page.drawText('Stockr — Order List', { x: MARGIN, y, size: 18, font: fontBold, color: rgb(0.77, 0.38, 0.18) });
+  y -= 22;
+  page.drawText(`${storeName} STORE`, { x: MARGIN, y, size: 11, font: fontBold, color: rgb(0.4, 0.4, 0.4) });
+  y -= 15;
+  page.drawText(now, { x: MARGIN, y, size: 10, font, color: rgb(0.5, 0.5, 0.5) });
+  y -= 10;
+  page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_W - MARGIN, y }, thickness: 1, color: rgb(0.85, 0.85, 0.85) });
+  y -= 24;
+
+  // Table header
+  const colName = MARGIN, colQty = PAGE_W - MARGIN - 200, colCost = PAGE_W - MARGIN - 130, colTotal = PAGE_W - MARGIN - 60;
+  page.drawText('Item', { x: colName, y, size: 10, font: fontBold });
+  page.drawText('Qty', { x: colCost - 10 - fontBold.widthOfTextAtSize('Qty', 10), y, size: 10, font: fontBold });
+  page.drawText('Cost', { x: colTotal - 10 - fontBold.widthOfTextAtSize('Cost', 10), y, size: 10, font: fontBold });
+  page.drawText('Total', { x: PAGE_W - MARGIN - fontBold.widthOfTextAtSize('Total', 10), y, size: 10, font: fontBold });
+  y -= 8;
+  page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_W - MARGIN, y }, thickness: 0.75, color: rgb(0.85, 0.85, 0.85) });
+  y -= 18;
+
+  const addPageIfNeeded = () => {
+    if (y < MARGIN + 60) {
+      page = pdfDoc.addPage([PAGE_W, PAGE_H]);
+      y = PAGE_H - MARGIN;
+    }
+  };
+
+  lines.forEach(item => {
+    addPageIfNeeded();
+    const unitDisplay = getUnitDisplay(item.qty, item);
+    const qtyStr = unitDisplay ? unitDisplay : `${item.qty} pc(s)`;
+    const name = item.name.length > 40 ? item.name.slice(0, 37) + '…' : item.name;
+    const costStr = formatPesoPDF(item.cost || 0);
+    const totalStr2 = formatPesoPDF(item.lineTotal);
+    page.drawText(name, { x: colName, y, size: 10, font });
+    page.drawText(qtyStr, { x: colCost - 10 - font.widthOfTextAtSize(qtyStr, 10), y, size: 10, font });
+    page.drawText(costStr, { x: colTotal - 10 - font.widthOfTextAtSize(costStr, 10), y, size: 10, font });
+    page.drawText(totalStr2, { x: PAGE_W - MARGIN - font.widthOfTextAtSize(totalStr2, 10), y, size: 10, font });
+    y -= 18;
+  });
+
+  addPageIfNeeded();
+  y -= 6;
+  page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_W - MARGIN, y }, thickness: 1, color: rgb(0.85, 0.85, 0.85) });
+  y -= 22;
+  page.drawText('ORDER TOTAL', { x: colQty, y, size: 12, font: fontBold });
+  const totalStr = formatPesoPDF(getOrderTotal());
+  const totalWidth = fontBold.widthOfTextAtSize(totalStr, 12);
+  page.drawText(totalStr, { x: PAGE_W - MARGIN - totalWidth, y, size: 12, font: fontBold, color: rgb(0.77, 0.38, 0.18) });
+
+  return pdfDoc.save();
 }
 
 // ═══════════════════════════════════════════════════════
