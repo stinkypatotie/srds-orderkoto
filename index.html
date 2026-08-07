@@ -1533,7 +1533,7 @@ function switchStore(store) {
   currentStore = store;
   localStorage.setItem('currentStore', store);
   items = [];
-  orderCart = {};
+  orderCart = loadOrderCart(store);
   updateStoreUI();
   // Load cached data for this store
   const cached = localStorage.getItem('stockr_items_' + store);
@@ -1667,6 +1667,10 @@ function updateUI() {
   if (currentView === 'order') {
     refreshOrderCats();
     renderPicker();
+    // Re-draw the saved order summary now that item data has actually
+    // arrived — without this, a cart restored from localStorage can be
+    // stuck showing "empty" if this ran before Firebase/local items loaded.
+    renderOrderSummary();
   }
 }
 
@@ -2376,7 +2380,21 @@ dz.addEventListener('drop', e => {
 // ═══════════════════════════════════════════════════════
 // ORDER STATE
 // ═══════════════════════════════════════════════════════
-let orderCart = {}; // { itemId: qty }
+let orderCart = loadOrderCart(currentStore); // { itemId: qty } — persisted per store until Clear Order
+
+// Order carts persist in localStorage per store, independent of the
+// Firebase inventory sync, so an in-progress order survives a reload
+// and is only wiped by the Clear Order button.
+function loadOrderCart(store) {
+  try {
+    const raw = localStorage.getItem('stockr_order_' + store);
+    return raw ? JSON.parse(raw) : {};
+  } catch(e) { return {}; }
+}
+
+function persistOrderCart() {
+  try { localStorage.setItem('stockr_order_' + currentStore, JSON.stringify(orderCart)); } catch(e) { /* non-fatal */ }
+}
 
 function getOrderItems() {
   return Object.entries(orderCart)
@@ -2455,6 +2473,7 @@ function setQty(id, val) {
 
 // ── Render the right-hand summary panel ──
 function renderOrderSummary() {
+  persistOrderCart();
   const lines = getOrderItems();
   const total = getOrderTotal();
   const count = lines.reduce((s,i) => s + i.qty, 0);
@@ -2528,6 +2547,7 @@ function summarySetQty(id, val) {
 
 function clearOrder() {
   orderCart = {};
+  localStorage.removeItem('stockr_order_' + currentStore);
   renderPicker();
   renderOrderSummary();
 }
