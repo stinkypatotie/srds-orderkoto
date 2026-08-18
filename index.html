@@ -2758,9 +2758,23 @@ async function sendTelegram() {
 
   const now = new Date().toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
   const storeName = STORE_NAMES[currentStore].toUpperCase();
-  // Short caption only — the itemized list lives in the attached PDF, so
-  // this never runs into Telegram's 4096-char text limit even for large orders.
-  const caption = `🛒 *Order List — ${storeName}*\n📅 ${now}\n${lines.length} item(s) · Total: ${formatPeso(getOrderTotal())}`;
+
+  // Telegram's sendDocument caption is capped at 1024 characters (not the
+  // 4096 limit for regular text messages). Show the full itemized list
+  // when it fits under that; otherwise fall back to a short summary and
+  // flag it so the user knows why the list was shortened — the full list
+  // is always still in the attached PDF either way.
+  const TELEGRAM_CAPTION_LIMIT = 1024;
+  const itemLines = lines.map(i => {
+    const unitDisplay = getUnitDisplay(i.qty, i);
+    const qtyStr = unitDisplay ? unitDisplay : `${i.qty} pc(s)`;
+    return `${qtyStr} - ${i.name}`;
+  }).join('\n');
+  const fullCaption = `🛒 *Order List — ${storeName}*\n📅 ${now}\n-----------------------------\n${itemLines}\n-----------------------------\nTOTAL: ${formatPeso(getOrderTotal())}`;
+  const shortCaption = `🛒 *Order List — ${storeName}*\n📅 ${now}\n${lines.length} item(s) · Total: ${formatPeso(getOrderTotal())}`;
+
+  const fitsLimit = fullCaption.length <= TELEGRAM_CAPTION_LIMIT;
+  const caption = fitsLimit ? fullCaption : shortCaption;
 
   const btn = document.querySelector('.btn-telegram');
   btn.disabled = true;
@@ -2799,7 +2813,10 @@ async function sendTelegram() {
   btn.disabled = false;
   btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248-2.04 9.613c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.37 14.53l-2.95-.924c-.642-.204-.655-.642.134-.953l11.52-4.443c.535-.194 1.003.13.488 1.038z"/></svg> Send via Telegram`;
 
-  if (ok === s.chatIds.length) showToast(`Sent to ${ok} chat(s) ✓`, "success");
+  if (ok === s.chatIds.length) {
+    if (fitsLimit) showToast(`Sent to ${ok} chat(s) ✓`, "success");
+    else showToast(`Sent to ${ok} chat(s) — list exceeds Telegram's ${TELEGRAM_CAPTION_LIMIT}-char limit, sent as summary (full list in PDF)`, "success");
+  }
   else if (ok > 0) showToast(`Sent to ${ok}/${s.chatIds.length} — some failed`, "");
   else showToast("Send failed: " + errs[0], "error");
 }
