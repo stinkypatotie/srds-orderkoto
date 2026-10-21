@@ -2726,7 +2726,7 @@ function renderOrderSummary() {
         <div onclick="event.stopPropagation()" style="display:flex;align-items:center;gap:4px;flex-shrink:0;">
           <button class="qty-btn" style="width:22px;height:22px;font-size:13px;" onclick="summaryChangeQty('${i.id}',-1)">−</button>
           <input type="number" min="0" value="${i.qty}"
-            style="width:40px;text-align:center;font-weight:700;font-size:13px;border:1px solid var(--border);border-radius:5px;padding:2px 4px;font-family:inherit;background:var(--surface);outline:none;"
+            style="width:64px;text-align:center;font-weight:700;font-size:14px;border:1px solid var(--border);border-radius:5px;padding:2px 4px;font-family:inherit;background:var(--surface);outline:none;"
             onchange="summarySetQty('${i.id}',this.value)"
             onfocus="this.select()">
           <button class="qty-btn" style="width:22px;height:22px;font-size:13px;" onclick="summaryChangeQty('${i.id}',1)">+</button>
