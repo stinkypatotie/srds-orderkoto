@@ -2362,8 +2362,9 @@ async function lvSyncNow() {
 // LOYVERSE AUTO-SYNC — Loyverse is the source of truth
 // Pulls items, categories, costs and this store's stock from Loyverse and
 // merges them into Stockr. Loyverse wins for: name, cost, stock (and
-// category when Stockr's is blank). Stockr keeps its own: subcategory,
-// low stock, FULL STOCK, unit name / pcs per unit.
+// low stock, category when Stockr's is blank). Full Stock is filled from
+// Loyverse's Optimal stock only when blank. Stockr keeps its own: subcategory,
+// unit name / pcs per unit.
 // New Loyverse items are added automatically — no CSV upload needed.
 // ═══════════════════════════════════════════════════════
 let lvAutoSyncing = false;
@@ -2420,15 +2421,26 @@ async function lvSyncCatalog({ force = false } = {}) {
         const opts = [v.option1_value, v.option2_value, v.option3_value].filter(Boolean);
         if (vars.length > 1 && opts.length) name += ` (${opts.join(', ')})`;
         const cost = Number(v.cost) > 0 ? Number(v.cost) : (Number(v.purchase_cost) > 0 ? Number(v.purchase_cost) : 0);
+        // Per-store Low Stock / Optimal stock live on the variant's store settings
+        const vs = (v.stores || []).find(x => x.store_id === storeId) || {};
+        const low = Math.round(Number(vs.low_stock) || 0);
+        const optimal = Math.round(Number(vs.optimal_stock) || 0);
         entries.push({
           lvId: v.variant_id,
           name: name.trim(),
           category: catName[it.category_id] || '',
           cost,
+          low,
+          optimal,
           stock: (v.variant_id in stockByVariant) ? stockByVariant[v.variant_id] : null
         });
       });
     });
+
+    // Debug aid: shows whether Loyverse returned low/optimal stock for this store
+    console.log('Loyverse low/optimal sample:', entries.filter(e => e.low || e.optimal).slice(0, 3),
+                'items with low_stock:', entries.filter(e => e.low > 0).length,
+                'with optimal_stock:', entries.filter(e => e.optimal > 0).length);
 
     const base = STORE_DB_PATHS[currentStore];
     const byLvId = {}, byName = {};
@@ -2456,6 +2468,10 @@ async function lvSyncCatalog({ force = false } = {}) {
         if (e.category && !it.category) patch.category = e.category;
         if (e.cost > 0 && Number(it.cost) !== e.cost) patch.cost = e.cost;
         if (e.stock !== null && it.inStock !== e.stock) patch.inStock = e.stock;
+        // Low Stock follows Loyverse; Full Stock is only filled from Loyverse's
+        // Optimal stock when you haven't set your own
+        if (e.low > 0 && it.lowStock !== e.low) patch.lowStock = e.low;
+        if (e.optimal > 0 && !(Number(it.fullStock) > 0)) patch.fullStock = e.optimal;
         const keys = Object.keys(patch);
         if (keys.length) {
           Object.assign(it, patch);
@@ -2466,7 +2482,7 @@ async function lvSyncCatalog({ force = false } = {}) {
         const key = useFirebase ? db.ref(base).push().key : 'local-' + Date.now() + '-' + Math.random().toString(36).slice(2);
         const now = Date.now();
         const rec = { name: e.name, category: e.category, subcategory: '', cost: e.cost,
-                      inStock: e.stock ?? 0, lowStock: 0, fullStock: 0, unitName: '', unitQty: 0,
+                      inStock: e.stock ?? 0, lowStock: e.low || 0, fullStock: e.optimal || 0, unitName: '', unitQty: 0,
                       lvId: e.lvId, createdAt: now, updatedAt: now };
         updates[`${base}/${key}`] = rec;
         items.push({ id: key, ...rec });
