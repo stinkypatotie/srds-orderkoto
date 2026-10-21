@@ -1028,6 +1028,11 @@
 
           <!-- LEFT: Item Picker -->
           <div>
+            <!-- Auto-order status -->
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+              <div id="lv-order-status" style="font-size:11px;color:var(--text3);">Auto order: Full Stock − Actual Stock</div>
+              <button class="btn btn-ghost btn-sm" onclick="recalcOrder()">↻ Recalculate</button>
+            </div>
             <!-- Order filter tabs -->
             <div style="display:flex;gap:4px;margin-bottom:12px;background:var(--bg);border-radius:var(--radius-sm);padding:3px;width:fit-content;">
               <button id="picker-tab-all" onclick="setPickerTab('all')" style="padding:6px 14px;font-size:12px;font-weight:700;border:none;border-radius:6px;cursor:pointer;background:var(--accent);color:white;transition:all 0.15s;font-family:inherit;">All Items</button>
@@ -1187,6 +1192,10 @@
         <div class="field">
           <label>Low Stock Threshold</label>
           <input id="f-lowstock" type="number" min="0" placeholder="e.g. 10 — alert when below this">
+        </div>
+        <div class="field">
+          <label>Full Stock (target quantity)</label>
+          <input id="f-fullstock" type="number" min="0" placeholder="e.g. 100 — order qty = Full Stock − Actual Stock">
         </div>
         <div class="form-grid two">
           <div class="field">
@@ -1500,6 +1509,8 @@ async function doLogin() {
 
 let listenerPaused = false;
 let dataListenerOn = false;
+const storeLoaded = {};     // store → true once Firebase has delivered its first snapshot
+const lvBootSynced = {};    // store → true once the auto Loyverse sync has been kicked off
 
 function loadFromFirebase() {
   if (dataListenerOn) return;
@@ -1514,6 +1525,9 @@ function loadFromFirebase() {
     items = data ? Object.entries(data).map(([id, val]) => ({ id, ...val })) : [];
     saveLocal();
     requestAnimationFrame(() => updateUI());
+    // First data load for this store → auto-sync with Loyverse once
+    storeLoaded[currentStore] = true;
+    if (!lvBootSynced[currentStore]) { lvBootSynced[currentStore] = true; lvSyncAndRefresh(true); }
   }, err => {
     showBanner('Database error: ' + err.message);
     useFirebase = false;
@@ -1534,6 +1548,7 @@ function switchStore(store) {
   localStorage.setItem('currentStore', store);
   items = [];
   orderCart = loadOrderCart(store);
+  orderManual = loadOrderManual(store);
   updateStoreUI();
   // Load cached data for this store
   const cached = localStorage.getItem('stockr_items_' + store);
@@ -1630,11 +1645,13 @@ function setView(v) {
   event.currentTarget.classList.add('active');
 
   if (v === 'order') {
+    autoComputeOrder();
     refreshOrderCats();
     refreshOrderSubcats();
     renderPicker();
     renderOrderSummary();
     renderTgPanel();
+    lvSyncAndRefresh(false);   // pull latest from Loyverse, then recompute
   } else {
     currentFilter = v === 'attention' ? 'attention' : 'all';
     document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
@@ -1824,7 +1841,7 @@ function openAddModal() {
   editingId = null;
   document.getElementById('modal-title').textContent = 'Add Item';
   document.getElementById('save-btn').textContent = 'Save Item';
-  ['f-name','f-cost','f-instock','f-lowstock','f-newcat','f-newsubcat','f-unitname','f-unitqty'].forEach(id => document.getElementById(id).value = '');
+  ['f-name','f-cost','f-instock','f-lowstock','f-fullstock','f-newcat','f-newsubcat','f-unitname','f-unitqty'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('f-category').value = '';
   document.getElementById('f-subcategory').innerHTML = '<option value="">— None —</option>';
   openModal('item-modal');
@@ -1844,6 +1861,7 @@ function openEditModal(id) {
   document.getElementById('f-cost').value = item.cost ?? '';
   document.getElementById('f-instock').value = item.inStock ?? '';
   document.getElementById('f-lowstock').value = item.lowStock ?? '';
+  document.getElementById('f-fullstock').value = item.fullStock ?? '';
   document.getElementById('f-unitname').value = item.unitName || '';
   document.getElementById('f-unitqty').value = item.unitQty ?? '';
   openModal('item-modal');
@@ -1861,6 +1879,7 @@ async function saveItem() {
     cost: parseFloat(document.getElementById('f-cost').value) || 0,
     inStock: parseInt(document.getElementById('f-instock').value) || 0,
     lowStock: parseInt(document.getElementById('f-lowstock').value) || 0,
+    fullStock: parseInt(document.getElementById('f-fullstock').value) || 0,
     unitName: document.getElementById('f-unitname').value.trim(),
     unitQty: parseInt(document.getElementById('f-unitqty').value) || 0,
     updatedAt: Date.now()
@@ -1868,6 +1887,9 @@ async function saveItem() {
 
   if (editingId) {
     item.id = editingId;
+    // keep the Loyverse link so the item isn't re-created on the next auto-sync
+    const prevItem = items.find(i => i.id === editingId);
+    if (prevItem && prevItem.lvId) item.lvId = prevItem.lvId;
     if (useFirebase) {
       // Firebase listener will update items[] automatically
       const { id, ...data } = item;
@@ -1884,7 +1906,7 @@ async function saveItem() {
     if (useFirebase) {
       const ref = db.ref(STORE_DB_PATHS[currentStore]).push();
       await ref.set({ name: item.name, category: item.category, subcategory: item.subcategory, cost: item.cost,
-                      inStock: item.inStock, lowStock: item.lowStock, unitName: item.unitName, unitQty: item.unitQty,
+                      inStock: item.inStock, lowStock: item.lowStock, fullStock: item.fullStock, unitName: item.unitName, unitQty: item.unitQty,
                       createdAt: item.createdAt, updatedAt: item.updatedAt })
         .catch(e => { showToast("Save failed: " + e.message, "error"); return; });
       // Firebase listener will update items[] automatically
@@ -2337,6 +2359,158 @@ async function lvSyncNow() {
 }
 
 // ═══════════════════════════════════════════════════════
+// LOYVERSE AUTO-SYNC — Loyverse is the source of truth
+// Pulls items, categories, costs and this store's stock from Loyverse and
+// merges them into Stockr. Loyverse wins for: name, cost, stock (and
+// category when Stockr's is blank). Stockr keeps its own: subcategory,
+// low stock, FULL STOCK, unit name / pcs per unit.
+// New Loyverse items are added automatically — no CSV upload needed.
+// ═══════════════════════════════════════════════════════
+let lvAutoSyncing = false;
+let lvLastSyncAt = 0;
+const LV_AUTO_SYNC_MIN_MS = 60 * 1000;   // don't re-pull more than once a minute unless forced
+
+function lvNormName(n) { return String(n || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
+
+function lvSetStatus(msg, kind) {
+  const el = document.getElementById('lv-order-status');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.color = kind === 'error' ? 'var(--red)' : kind === 'ok' ? 'var(--green)' : 'var(--text3)';
+}
+
+async function lvSyncCatalog({ force = false } = {}) {
+  if (lvAutoSyncing) return false;
+  if (!force && Date.now() - lvLastSyncAt < LV_AUTO_SYNC_MIN_MS) return true;
+  if (useFirebase && !(firebase.auth().currentUser)) return false;
+  // Don't merge before Firebase has delivered this store's items — otherwise
+  // existing items could look "new" and get duplicated.
+  if (useFirebase && !storeLoaded[currentStore]) return false;
+
+  const s = await loadLoyverseSettings();
+  if (!s.token) { lvSetStatus('Loyverse not connected — open Sync Loyverse (Inventory page) and save your token', 'error'); return false; }
+  const storeId = s.storeMap && s.storeMap[currentStore];
+  if (!storeId) { lvSetStatus(`Map a Loyverse store to ${STORE_NAMES[currentStore]} first (Sync Loyverse)`, 'error'); return false; }
+
+  const storeKey = currentStore;
+  lvAutoSyncing = true;
+  lvSetStatus('Syncing with Loyverse…');
+  try {
+    const [loyItems, cats, levels] = await Promise.all([
+      lvFetchAll('items', s.token),
+      lvFetchAll('categories', s.token),
+      lvFetchAll('inventory', s.token, { store_id: storeId })
+    ]);
+    if (storeKey !== currentStore) return false;   // user switched stores mid-sync
+
+    const catName = {};
+    cats.forEach(c => { catName[c.id] = c.name; });
+    const stockByVariant = {};
+    levels.forEach(l => {
+      if (l.store_id === storeId) stockByVariant[l.variant_id] = Math.round(Number(l.in_stock) || 0);
+    });
+
+    // One entry per Loyverse variant (items without stock tracking are skipped)
+    const entries = [];
+    loyItems.forEach(it => {
+      if (it.deleted_at || it.track_stock === false) return;
+      const vars = it.variants || [];
+      vars.forEach(v => {
+        let name = it.item_name || '';
+        const opts = [v.option1_value, v.option2_value, v.option3_value].filter(Boolean);
+        if (vars.length > 1 && opts.length) name += ` (${opts.join(', ')})`;
+        const cost = Number(v.cost) > 0 ? Number(v.cost) : (Number(v.purchase_cost) > 0 ? Number(v.purchase_cost) : 0);
+        entries.push({
+          lvId: v.variant_id,
+          name: name.trim(),
+          category: catName[it.category_id] || '',
+          cost,
+          stock: (v.variant_id in stockByVariant) ? stockByVariant[v.variant_id] : null
+        });
+      });
+    });
+
+    const base = STORE_DB_PATHS[currentStore];
+    const byLvId = {}, byName = {};
+    items.forEach(i => {
+      if (i.lvId) byLvId[i.lvId] = i;
+      const k = lvNormName(i.name);
+      if (k && !byName[k]) byName[k] = i;
+    });
+
+    const updates = {};
+    const claimed = new Set();
+    let created = 0, changed = 0;
+
+    entries.forEach(e => {
+      let it = byLvId[e.lvId];
+      if (!it) {
+        const cand = byName[lvNormName(e.name)];
+        if (cand && !cand.lvId && !claimed.has(cand.id)) it = cand;   // link existing item by name, once
+      }
+      if (it) {
+        claimed.add(it.id);
+        const patch = {};
+        if (it.lvId !== e.lvId) patch.lvId = e.lvId;
+        if (e.name && it.name !== e.name) patch.name = e.name;
+        if (e.category && !it.category) patch.category = e.category;
+        if (e.cost > 0 && Number(it.cost) !== e.cost) patch.cost = e.cost;
+        if (e.stock !== null && it.inStock !== e.stock) patch.inStock = e.stock;
+        const keys = Object.keys(patch);
+        if (keys.length) {
+          Object.assign(it, patch);
+          if (keys.some(k => k !== 'lvId')) changed++;
+          keys.forEach(k => { updates[`${base}/${it.id}/${k}`] = patch[k]; });
+        }
+      } else {
+        const key = useFirebase ? db.ref(base).push().key : 'local-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+        const now = Date.now();
+        const rec = { name: e.name, category: e.category, subcategory: '', cost: e.cost,
+                      inStock: e.stock ?? 0, lowStock: 0, fullStock: 0, unitName: '', unitQty: 0,
+                      lvId: e.lvId, createdAt: now, updatedAt: now };
+        updates[`${base}/${key}`] = rec;
+        items.push({ id: key, ...rec });
+        created++;
+      }
+    });
+
+    if (useFirebase) {
+      const keys = Object.keys(updates);
+      const CHUNK = 300;
+      for (let i = 0; i < keys.length; i += CHUNK) {
+        const part = {};
+        keys.slice(i, i + CHUNK).forEach(k => { part[k] = updates[k]; });
+        await db.ref().update(part);
+      }
+    }
+    saveLocal();
+    lvLastSyncAt = Date.now();
+    updateUI();
+    const t = new Date().toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' });
+    lvSetStatus(`Synced with Loyverse at ${t}` + (created || changed ? ` · ${created} new, ${changed} updated` : ' · up to date'), 'ok');
+    return true;
+  } catch(e) {
+    console.error('Loyverse auto-sync error:', e);
+    lvSetStatus('Loyverse sync failed: ' + (e.message || e), 'error');
+    return false;
+  } finally {
+    lvAutoSyncing = false;
+  }
+}
+
+// Sync, then recompute the order if the Order tab is showing
+async function lvSyncAndRefresh(force) {
+  const ok = await lvSyncCatalog({ force });
+  if (currentView === 'order') {
+    autoComputeOrder();
+    refreshOrderCats();
+    renderPicker();
+    renderOrderSummary();
+  }
+  return ok;
+}
+
+// ═══════════════════════════════════════════════════════
 // TOASTS
 // ═══════════════════════════════════════════════════════
 function showToast(msg, type = '') {
@@ -2381,6 +2555,7 @@ dz.addEventListener('drop', e => {
 // ORDER STATE
 // ═══════════════════════════════════════════════════════
 let orderCart = loadOrderCart(currentStore); // { itemId: qty } — persisted per store until Clear Order
+let orderManual = loadOrderManual(currentStore); // { itemId: {qty, stock} } — manual edits that beat the auto-computed qty
 
 // Order carts persist in localStorage per store, independent of the
 // Firebase inventory sync, so an in-progress order survives a reload
@@ -2390,6 +2565,25 @@ function loadOrderCart(store) {
     const raw = localStorage.getItem('stockr_order_' + store);
     return raw ? JSON.parse(raw) : {};
   } catch(e) { return {}; }
+}
+
+function loadOrderManual(store) {
+  try {
+    const raw = localStorage.getItem('stockr_order_manual_' + store);
+    return raw ? JSON.parse(raw) : {};
+  } catch(e) { return {}; }
+}
+
+function persistOrderManual() {
+  try { localStorage.setItem('stockr_order_manual_' + currentStore, JSON.stringify(orderManual)); } catch(e) { /* non-fatal */ }
+}
+
+// Remember that the user set this line by hand. It sticks until the item is
+// restocked (Actual Stock goes up) or Recalculate is pressed.
+function markManual(id) {
+  const it = items.find(i => i.id === id);
+  orderManual[id] = { qty: orderCart[id] || 0, stock: it ? (Number(it.inStock) || 0) : 0 };
+  persistOrderManual();
 }
 
 function persistOrderCart() {
@@ -2437,10 +2631,21 @@ function renderPicker() {
     const qty = orderCart[item.id] || 0;
     const sc = getStockClass(item);
     const subcatLine = item.subcategory ? ` · <span style="color:var(--accent);font-weight:500">${esc(item.subcategory)}</span>` : '';
+    const autoQ = getAutoOrderQty(item);
+    const autoNote = autoQ > 0 ? `<span style="font-size:10px;color:var(--green);font-weight:600;">need ${(Number(item.fullStock)||0) - (Number(item.inStock)||0)}</span>` : '';
     return `<div class="picker-row">
       <div>
         <div class="item-name">${esc(item.name)}</div>
         <div style="font-size:11px;color:var(--text3);margin-top:1px">${esc(item.category||'—')}${subcatLine}</div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:3px;flex-wrap:wrap;">
+          ${unitTagHTML(item)}
+          <span style="font-size:11px;color:var(--text3);display:inline-flex;align-items:center;gap:3px;">Full
+            <input type="number" min="0" value="${item.fullStock || ''}" placeholder="—"
+              onchange="quickUpdateFullStock('${item.id}', this.value)" onfocus="this.select()"
+              style="width:52px;font-size:11px;font-weight:600;border:1px solid var(--border);border-radius:4px;padding:1px 4px;background:var(--surface);font-family:inherit;outline:none;">
+          </span>
+          ${autoNote}
+        </div>
       </div>
       <div class="cost" style="font-size:13px">${item.cost != null ? formatPeso(item.cost) : '—'}</div>
       <div><div class="stock-wrap ${sc}"><div class="stock-dot"></div><span class="stock-val" style="font-size:12px">${item.inStock ?? '—'}</span></div></div>
@@ -2459,6 +2664,7 @@ function changeQty(id, delta) {
   const cur = orderCart[id] || 0;
   const next = Math.max(0, cur + delta);
   orderCart[id] = next;
+  markManual(id);
   // Update input without full re-render
   const inp = document.getElementById(`qty-${id}`);
   if (inp) inp.value = next;
@@ -2468,6 +2674,7 @@ function changeQty(id, delta) {
 function setQty(id, val) {
   const n = Math.max(0, parseInt(val) || 0);
   orderCart[id] = n;
+  markManual(id);
   renderOrderSummary();
 }
 
@@ -2508,6 +2715,7 @@ function renderOrderSummary() {
           <button class="qty-btn" style="width:22px;height:22px;font-size:13px;" onclick="summaryChangeQty('${i.id}',1)">+</button>
         </div>
         ${unitBadge}
+        ${unitTagHTML(i)}
         <span class="order-item-name">${esc(i.name)}</span>
         <button class="remove-line" onclick="event.stopPropagation();removeOrderLine('${i.id}')" title="Remove" style="margin-left:auto;">✕</button>
       </div>
@@ -2520,6 +2728,7 @@ function renderOrderSummary() {
 
 function removeOrderLine(id) {
   delete orderCart[id];
+  markManual(id);
   const inp = document.getElementById(`qty-${id}`);
   if (inp) inp.value = 0;
   renderOrderSummary();
@@ -2530,6 +2739,7 @@ function summaryChangeQty(id, delta) {
   const next = Math.max(0, cur + delta);
   if (next === 0) { removeOrderLine(id); return; }
   orderCart[id] = next;
+  markManual(id);
   // Also sync picker input if visible
   const pickerInp = document.getElementById(`qty-${id}`);
   if (pickerInp) pickerInp.value = next;
@@ -2540,12 +2750,16 @@ function summarySetQty(id, val) {
   const n = Math.max(0, parseInt(val) || 0);
   if (n === 0) { removeOrderLine(id); return; }
   orderCart[id] = n;
+  markManual(id);
   const pickerInp = document.getElementById(`qty-${id}`);
   if (pickerInp) pickerInp.value = n;
   renderOrderSummary();
 }
 
 function clearOrder() {
+  // Items in the cleared order count as "handled" until they're restocked,
+  // so reopening the Order tab doesn't instantly refill the same list.
+  Object.keys(orderCart).forEach(id => { orderCart[id] = 0; markManual(id); });
   orderCart = {};
   localStorage.removeItem('stockr_order_' + currentStore);
   renderPicker();
@@ -2600,6 +2814,80 @@ function refreshOrderSubcats() {
 function onOrderCatChange() {
   refreshOrderSubcats();
   renderPicker();
+}
+
+// ═══════════════════════════════════════════════════════
+// AUTO ORDER — Full Stock − Actual Stock
+// ═══════════════════════════════════════════════════════
+// Returns null when no Full Stock is set (item is not auto-ordered), else
+// the quantity in PIECES (the cart's unit). Per-box items are rounded UP to
+// whole boxes, since you can't order half a box.
+function getAutoOrderQty(item) {
+  const full = Number(item.fullStock) || 0;
+  if (full <= 0) return null;
+  const need = full - (Number(item.inStock) || 0);
+  if (need <= 0) return 0;
+  const per = Number(item.unitQty) || 0;
+  return per > 0 ? Math.ceil(need / per) * per : need;
+}
+
+function isPerBox(item) { return (Number(item.unitQty) || 0) > 0; }
+
+// Small "PER BOX" / "PER PC" tag shown in the order list
+function unitTagHTML(item) {
+  const box = isPerBox(item);
+  const label = box ? 'PER ' + esc((item.unitName || 'box').toUpperCase()) : 'PER PC';
+  const bg = box ? 'var(--accent-light)' : 'var(--bg)';
+  const col = box ? 'var(--accent)' : 'var(--text2)';
+  return `<span style="font-size:9px;font-weight:700;letter-spacing:0.3px;color:${col};background:${bg};border:1px solid var(--border);border-radius:4px;padding:0 5px;white-space:nowrap;flex-shrink:0;">${label}</span>`;
+}
+
+function autoComputeOrder() {
+  let changed = false;
+  items.forEach(item => {
+    const m = orderManual[item.id];
+    if (m) {
+      if ((Number(item.inStock) || 0) <= m.stock) {
+        // manual edit still applies (no restock since)
+        if (m.qty > 0) orderCart[item.id] = m.qty; else delete orderCart[item.id];
+        return;
+      }
+      delete orderManual[item.id];   // restocked → back to automatic
+      changed = true;
+    }
+    const q = getAutoOrderQty(item);
+    if (q === null) return;          // no Full Stock → leave cart as the user has it
+    if (q > 0) orderCart[item.id] = q; else delete orderCart[item.id];
+  });
+  if (changed) persistOrderManual();
+}
+
+// Wipe manual edits, re-pull Loyverse, recompute everything
+async function recalcOrder() {
+  orderManual = {};
+  persistOrderManual();
+  autoComputeOrder();
+  renderPicker();
+  renderOrderSummary();
+  await lvSyncAndRefresh(true);
+  showToast("Order recalculated", "success");
+}
+
+// Set Full Stock inline from the order list
+async function quickUpdateFullStock(id, val) {
+  const n = Math.max(0, parseInt(val) || 0);
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  item.fullStock = n;
+  delete orderManual[id];
+  persistOrderManual();
+  try {
+    if (useFirebase) await db.ref(`${STORE_DB_PATHS[currentStore]}/${id}/fullStock`).set(n);
+    else saveLocal();
+  } catch(e) { showToast("Update failed: " + e.message, "error"); }
+  autoComputeOrder();
+  renderPicker();
+  renderOrderSummary();
 }
 
 // ═══════════════════════════════════════════════════════
