@@ -908,6 +908,12 @@
           <div class="user-plan">Free plan</div>
         </div>
       </div>
+      <div class="nav-item" onclick="signOutApp()" style="margin-top:12px;">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M6 2H3v12h3"/><path d="M10 5l3 3-3 3"/><path d="M13 8H6"/>
+        </svg>
+        Sign out
+      </div>
     </div>
   </nav>
   <div class="sidebar-backdrop" id="backdrop" onclick="closeSidebar()"></div>
@@ -1073,6 +1079,8 @@
               </div>
               <span class="order-count" id="order-count">0</span>
             </div>
+
+            <div id="order-cat-filter" style="display:none;flex-wrap:wrap;gap:5px;padding:8px 14px;border-bottom:1px solid var(--border);"></div>
 
             <div class="order-empty" id="order-empty">
               <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -1425,7 +1433,13 @@ function initFirebase() {
 
     // Sign in first, then load data only after auth is fully confirmed
     firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL).then(() => {
-      showLoginOverlay();
+      // Already signed in on this device? Skip the login screen.
+      const unsub = firebase.auth().onAuthStateChanged(async user => {
+        unsub();
+        if (!user) { showLoginOverlay(); return; }
+        try { await user.getIdToken(true); } catch (e) { /* offline: carry on with the saved session */ }
+        loadFromFirebase();
+      });
     });
 
   } catch (e) {
@@ -1507,6 +1521,12 @@ async function doLogin() {
   }
 }
 
+function signOutApp() {
+  if (!useFirebase) { showToast("You're not signed in", "error"); return; }
+  if (!confirm('Sign out of Stockr on this device?')) return;
+  firebase.auth().signOut().then(() => location.reload()).catch(e => showToast('Sign out failed: ' + e.message, 'error'));
+}
+
 let listenerPaused = false;
 let dataListenerOn = false;
 const storeLoaded = {};     // store → true once Firebase has delivered its first snapshot
@@ -1549,6 +1569,7 @@ function switchStore(store) {
   items = [];
   orderCart = loadOrderCart(store);
   orderManual = loadOrderManual(store);
+  orderCatFilter = new Set();
   updateStoreUI();
   // Load cached data for this store
   const cached = localStorage.getItem('stockr_items_' + store);
@@ -1936,6 +1957,15 @@ async function deleteItem(id) {
 
 function openModal(id) { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// Esc closes the popup window that's currently open
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  const open = document.querySelectorAll('.overlay.open');
+  if (!open.length) return;
+  open[open.length - 1].classList.remove('open');   // topmost / last opened in the page
+  e.preventDefault();
+});
 
 function openClearDBModal() {
   const storeName = (typeof STORE_NAMES !== 'undefined' ? STORE_NAMES[currentStore] : currentStore).toUpperCase();
@@ -2606,13 +2636,58 @@ function persistOrderCart() {
   try { localStorage.setItem('stockr_order_' + currentStore, JSON.stringify(orderCart)); } catch(e) { /* non-fatal */ }
 }
 
-function getOrderItems() {
+let orderCatFilter = new Set();   // categories shown/sent; empty = all
+let orderCatNames = [];           // chip index → category name
+
+function getOrderItemsAll() {
   return Object.entries(orderCart)
     .filter(([,qty]) => qty > 0)
     .map(([id, qty]) => {
       const item = items.find(i => i.id === id);
       return item ? { ...item, qty, lineTotal: qty * (item.cost || 0) } : null;
     }).filter(Boolean);
+}
+
+// What you see in the summary is what gets totalled and sent
+function getOrderItems() {
+  const all = getOrderItemsAll();
+  if (!orderCatFilter.size) return all;
+  return all.filter(i => orderCatFilter.has(i.category || ''));
+}
+
+function toggleOrderCat(idx) {
+  const name = orderCatNames[idx];
+  if (name === undefined) return;
+  if (orderCatFilter.has(name)) orderCatFilter.delete(name); else orderCatFilter.add(name);
+  if (orderCatFilter.size >= orderCatNames.length) orderCatFilter.clear();  // every category = All
+  renderOrderSummary();
+}
+
+function clearOrderCatFilter() {
+  orderCatFilter.clear();
+  renderOrderSummary();
+}
+
+function renderOrderCatFilter() {
+  const bar = document.getElementById('order-cat-filter');
+  if (!bar) return;
+  const all = getOrderItemsAll();
+  const counts = {};
+  all.forEach(i => { const c = i.category || ''; counts[c] = (counts[c] || 0) + 1; });
+  orderCatNames = Object.keys(counts).sort((a, b) => a.localeCompare(b));
+  [...orderCatFilter].forEach(c => { if (!(c in counts)) orderCatFilter.delete(c); });
+  if (orderCatNames.length < 2) { orderCatFilter.clear(); bar.style.display = 'none'; bar.innerHTML = ''; return; }
+  const chip = (label, on, handler) =>
+    `<button onclick="${handler}" style="font-family:inherit;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;cursor:pointer;border:1px solid ${on ? 'var(--accent)' : 'var(--border)'};background:${on ? 'var(--accent)' : 'var(--surface)'};color:${on ? 'white' : 'var(--text2)'};">${label}</button>`;
+  let html = chip('All', !orderCatFilter.size, 'clearOrderCatFilter()');
+  html += orderCatNames.map((c, idx) =>
+    chip(`${esc(c || 'Uncategorized')} <span style="opacity:.75">${counts[c]}</span>`, orderCatFilter.has(c), `toggleOrderCat(${idx})`)).join('');
+  if (orderCatFilter.size) {
+    const shown = getOrderItems().length;
+    html += `<div style="flex-basis:100%;font-size:10px;color:var(--text3);">Showing ${shown} of ${all.length} items. Hidden categories are left out of the total and of anything you send.</div>`;
+  }
+  bar.style.display = 'flex';
+  bar.innerHTML = html;
 }
 
 function getOrderTotal() {
@@ -2698,6 +2773,7 @@ function setQty(id, val) {
 // ── Render the right-hand summary panel ──
 function renderOrderSummary() {
   persistOrderCart();
+  renderOrderCatFilter();
   const lines = getOrderItems();
   const total = getOrderTotal();
   const count = lines.reduce((s,i) => s + i.qty, 0);
@@ -2779,9 +2855,9 @@ function summarySetQty(id, val) {
 function clearOrder() {
   // Items in the cleared order count as "handled" until they're restocked,
   // so reopening the Order tab doesn't instantly refill the same list.
-  Object.keys(orderCart).forEach(id => { orderCart[id] = 0; markManual(id); });
-  orderCart = {};
-  localStorage.removeItem('stockr_order_' + currentStore);
+  const ids = orderCatFilter.size ? getOrderItems().map(i => i.id) : Object.keys(orderCart);
+  ids.forEach(id => { orderCart[id] = 0; markManual(id); delete orderCart[id]; });
+  if (!orderCatFilter.size) orderCart = {};
   renderPicker();
   renderOrderSummary();
 }
