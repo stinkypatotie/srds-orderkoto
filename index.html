@@ -1380,6 +1380,8 @@ const FIREBASE_CONFIG = {
 let db = null;
 let useFirebase = false;
 let items = [];
+// Items Loyverse marks as not available for sale in this store stay stored (so Full Stock etc. survive) but are hidden everywhere
+function visibleItems() { return items.filter(i => !i.notForSale); }
 let editingId = null;
 let currentFilter = 'all';
 let currentView = 'inventory';
@@ -1713,8 +1715,8 @@ function updateUI() {
 }
 
 function updateStats() {
-  const total = items.length;
-  const attention = items.filter(i => i.inStock <= 0 || (i.lowStock > 0 && i.inStock <= i.lowStock)).length;
+  const total = visibleItems().length;
+  const attention = visibleItems().filter(i => i.inStock <= 0 || (i.lowStock > 0 && i.inStock <= i.lowStock)).length;
   const inS = total - attention;
   document.getElementById('stat-total').textContent = total;
   document.getElementById('stat-in').textContent = inS < 0 ? 0 : inS;
@@ -1724,7 +1726,7 @@ function updateStats() {
 }
 
 function updateCategorySelect() {
-  const cats = [...new Set(items.map(i => i.category).filter(Boolean))].sort();
+  const cats = [...new Set(visibleItems().map(i => i.category).filter(Boolean))].sort();
   const sel = document.getElementById('f-category');
   const val = sel.value;
   sel.innerHTML = '<option value="">— Select —</option>' + cats.map(c => `<option>${c}</option>`).join('');
@@ -1735,7 +1737,7 @@ function updateCategorySelect() {
 
 // Rebuild inventory category + subcategory dropdowns
 function updateInvCatSelects() {
-  const cats = [...new Set(items.map(i => i.category).filter(Boolean))].sort();
+  const cats = [...new Set(visibleItems().map(i => i.category).filter(Boolean))].sort();
   const catSel = document.getElementById('inv-cat');
   if (!catSel) return;
   const curCat = catSel.value;
@@ -1746,7 +1748,7 @@ function updateInvCatSelects() {
 
 function updateInvSubcatSelect() {
   const catVal = document.getElementById('inv-cat')?.value || '';
-  const pool = catVal ? items.filter(i => i.category === catVal) : items;
+  const pool = catVal ? visibleItems().filter(i => i.category === catVal) : visibleItems();
   const subs = [...new Set(pool.map(i => i.subcategory).filter(Boolean))].sort();
   const subSel = document.getElementById('inv-subcat');
   if (!subSel) return;
@@ -1758,7 +1760,7 @@ function updateInvSubcatSelect() {
 // Modal subcategory populate based on chosen category
 function updateModalSubcats(selectVal = '') {
   const cat = document.getElementById('f-newcat').value.trim() || document.getElementById('f-category').value;
-  const pool = cat ? items.filter(i => i.category === cat) : items;
+  const pool = cat ? visibleItems().filter(i => i.category === cat) : visibleItems();
   const subs = [...new Set(pool.map(i => i.subcategory).filter(Boolean))].sort();
   const sel = document.getElementById('f-subcategory');
   sel.innerHTML = '<option value="">— None —</option>' + subs.map(s => `<option ${s===selectVal?'selected':''}>${esc(s)}</option>`).join('');
@@ -1804,7 +1806,7 @@ function wildcardMatch(raw, item) {
 
 function renderTable() {
   const q = document.getElementById('search').value;
-  let filtered = items.filter(i => {
+  let filtered = visibleItems().filter(i => {
     const match = wildcardMatch(q, i);
     if (!match) return false;
     if (currentFilter === 'in-stock') { if (getStockClass(i) !== 'in-stock') return false; }
@@ -1825,9 +1827,9 @@ function renderTable() {
   if (!filtered.length) {
     tbody.innerHTML = `<div class="empty-state">
       <div class="empty-icon"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="18" height="16" rx="2"/><path d="M7 8h8M7 12h5"/></svg></div>
-      <div class="empty-title">${items.length ? 'No results' : 'No items yet'}</div>
-      <div class="empty-desc">${items.length ? 'Try adjusting your search or filter.' : 'Add your first item or import a CSV.'}</div>
-      ${!items.length ? '<button class="btn btn-primary" onclick="openAddModal()">Add first item</button>' : ''}
+      <div class="empty-title">${visibleItems().length ? 'No results' : 'No items yet'}</div>
+      <div class="empty-desc">${visibleItems().length ? 'Try adjusting your search or filter.' : 'Add your first item or import a CSV.'}</div>
+      ${!visibleItems().length ? '<button class="btn btn-primary" onclick="openAddModal()">Add first item</button>' : ''}
     </div>`;
     return;
   }
@@ -2149,7 +2151,7 @@ async function importCSV() {
 // ═══════════════════════════════════════════════════════
 function exportCSV() {
   const headers = ['name','category','subcategory','cost','in_stock','low_stock'];
-  const rows = items.map(i => [i.name, i.category, i.subcategory||'', i.cost, i.inStock, i.lowStock].map(v => `"${String(v??'').replace(/"/g,'""')}"`));
+  const rows = visibleItems().map(i => [i.name, i.category, i.subcategory||'', i.cost, i.inStock, i.lowStock].map(v => `"${String(v??'').replace(/"/g,'""')}"`));
   const csv = [headers.join(','), ...rows.map(r=>r.join(','))].join('\n');
   const a = document.createElement('a');
   a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
@@ -2453,6 +2455,10 @@ async function lvSyncCatalog({ force = false } = {}) {
         const cost = Number(v.cost) > 0 ? Number(v.cost) : (Number(v.purchase_cost) > 0 ? Number(v.purchase_cost) : 0);
         // Per-store Low Stock / Optimal stock live on the variant's store settings
         const vs = (v.stores || []).find(x => x.store_id === storeId) || {};
+        // "Available for sale": false when this store's setting says no, or the item lists other stores but not this one
+        const available = (v.stores && v.stores.length)
+          ? !!((v.stores || []).find(x => x.store_id === storeId)) && vs.available_for_sale !== false
+          : true;
         const low = Math.round(Number(vs.low_stock) || 0);
         const optimal = Math.round(Number(vs.optimal_stock) || 0);
         entries.push({
@@ -2462,12 +2468,14 @@ async function lvSyncCatalog({ force = false } = {}) {
           cost,
           low,
           optimal,
+          available,
           stock: (v.variant_id in stockByVariant) ? stockByVariant[v.variant_id] : null
         });
       });
     });
 
     // Debug aid: shows whether Loyverse returned low/optimal stock for this store
+    console.log('Loyverse not-for-sale in this store:', entries.filter(e => !e.available).length);
     console.log('Loyverse low/optimal sample:', entries.filter(e => e.low || e.optimal).slice(0, 3),
                 'items with low_stock:', entries.filter(e => e.low > 0).length,
                 'with optimal_stock:', entries.filter(e => e.optimal > 0).length);
@@ -2500,6 +2508,7 @@ async function lvSyncCatalog({ force = false } = {}) {
         if (e.stock !== null && it.inStock !== e.stock) patch.inStock = e.stock;
         // Low Stock follows Loyverse; Full Stock is only filled from Loyverse's
         // Optimal stock when you haven't set your own
+        if (!!it.notForSale !== !e.available) patch.notForSale = !e.available;
         if (e.low > 0 && it.lowStock !== e.low) patch.lowStock = e.low;
         if (e.optimal > 0 && !(Number(it.fullStock) > 0)) patch.fullStock = e.optimal;
         const keys = Object.keys(patch);
@@ -2508,6 +2517,8 @@ async function lvSyncCatalog({ force = false } = {}) {
           if (keys.some(k => k !== 'lvId')) changed++;
           keys.forEach(k => { updates[`${base}/${it.id}/${k}`] = patch[k]; });
         }
+      } else if (!e.available) {
+        // not sold in this store: don't add it
       } else {
         const key = useFirebase ? db.ref(base).push().key : 'local-' + Date.now() + '-' + Math.random().toString(36).slice(2);
         const now = Date.now();
@@ -2533,7 +2544,7 @@ async function lvSyncCatalog({ force = false } = {}) {
     lvLastSyncAt = Date.now();
     updateUI();
     const t = new Date().toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' });
-    lvSetStatus(`Synced with Loyverse at ${t}` + (created || changed ? ` · ${created} new, ${changed} updated` : ' · up to date'), 'ok');
+    lvSetStatus(`Synced with Loyverse at ${t}` + (created || changed ? ` · ${created} new, ${changed} updated` : ' · up to date') + (items.some(i => i.notForSale) ? ` · ${items.filter(i => i.notForSale).length} hidden (not for sale here)` : ''), 'ok');
     return true;
   } catch(e) {
     console.error('Loyverse auto-sync error:', e);
@@ -2700,7 +2711,7 @@ function renderPicker() {
   const cat    = document.getElementById('order-cat')?.value    || '';
   const subcat = document.getElementById('order-subcat')?.value || '';
 
-  let filtered = items.filter(i => {
+  let filtered = visibleItems().filter(i => {
     const sc = getStockClass(i);
     const alertOnly = pickerTab === 'alert' ? (sc === 'low-stock' || sc === 'out-stock') : true;
     const matchQ = wildcardMatch(q, i);
@@ -2712,7 +2723,7 @@ function renderPicker() {
   const body = document.getElementById('picker-body');
   if (!filtered.length) {
     const msg = pickerTab === 'alert'
-      ? (items.length ? 'All items are fully stocked! 🎉' : 'No items in database yet.')
+      ? (visibleItems().length ? 'All items are fully stocked! 🎉' : 'No items in database yet.')
       : 'No items match your search.';
     body.innerHTML = `<div class="empty-state" style="padding:32px"><div class="empty-desc">${msg}</div></div>`;
     return;
@@ -2881,7 +2892,7 @@ function setPickerTab(tab) {
 // ── Update category dropdown when order page opens ──
 function refreshOrderCats() {
   const base = pickerTab === 'alert'
-    ? items.filter(i => getStockClass(i) === 'low-stock' || getStockClass(i) === 'out-stock')
+    ? visibleItems().filter(i => getStockClass(i) === 'low-stock' || getStockClass(i) === 'out-stock')
     : items;
   const cats = [...new Set(base.map(i => i.category).filter(Boolean))].sort();
   const sel = document.getElementById('order-cat');
@@ -2895,7 +2906,7 @@ function refreshOrderCats() {
 function refreshOrderSubcats() {
   const catVal = document.getElementById('order-cat')?.value || '';
   const base = pickerTab === 'alert'
-    ? items.filter(i => getStockClass(i) === 'low-stock' || getStockClass(i) === 'out-stock')
+    ? visibleItems().filter(i => getStockClass(i) === 'low-stock' || getStockClass(i) === 'out-stock')
     : items;
   const pool = catVal ? base.filter(i => i.category === catVal) : base;
   const subs = [...new Set(pool.map(i => i.subcategory).filter(Boolean))].sort();
@@ -2941,6 +2952,7 @@ function unitTagHTML(item) {
 function autoComputeOrder() {
   let changed = false;
   items.forEach(item => {
+    if (item.notForSale) { delete orderCart[item.id]; return; }
     const m = orderManual[item.id];
     if (m) {
       if ((Number(item.inStock) || 0) <= m.stock) {
